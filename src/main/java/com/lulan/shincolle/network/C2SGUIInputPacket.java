@@ -556,12 +556,6 @@ public class C2SGUIInputPacket {
             return;
 
         CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
-        if (capa == null) {
-            boolean newSit = !clickedShip.isOrderedToSit();
-            clickedShip.setEntitySit(newSit);
-            clickedShip.setRiderAndMountSit();
-            return;
-        }
 
         int teamId = capa.getSelectTeam();
         int clickedUid = clickedShip.getStateMinor(ID.M.ShipUID);
