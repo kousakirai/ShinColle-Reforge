@@ -30,7 +30,7 @@ public class GuiCrane extends AbstractContainerScreen<ContainerCrane> {
     public GuiCrane(ContainerCrane menu, Inventory playerInv, Component title) {
         super(menu, playerInv, title);
         this.imageWidth = 176;
-        this.imageHeight = 204;
+        this.imageHeight = 201;
     }
 
     private static String tr(String key, String fallback) {
@@ -40,43 +40,61 @@ public class GuiCrane extends AbstractContainerScreen<ContainerCrane> {
 
     @Override
     protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
-        // Render background texture
+        // Render background texture (original: 176x201)
         graphics.blit(TEXTURE, this.leftPos, this.topPos, 0, 0, this.imageWidth, this.imageHeight);
 
-        // Draw power indicator (top-left)
-        int powerX = this.leftPos + 7;
-        int powerY = this.topPos + 6;
+        // Draw button sprites from texture (match original positions)
         boolean active = this.menu.isActive();
-        boolean paired = this.menu.isPaired();
-
-        if (active && paired) {
-            // Bright green when active and paired
-            graphics.fill(powerX, powerY, powerX + 13, powerY + 13, 0xFF00FF00);
-        } else if (active) {
-            // Medium green when active but not paired
-            graphics.fill(powerX, powerY, powerX + 13, powerY + 13, 0xFF008800);
-        } else {
-            // Dim green when off
-            graphics.fill(powerX, powerY, powerX + 13, powerY + 13, 0xFF005500);
+        if (active) {
+            graphics.blit(TEXTURE, this.leftPos + 7, this.topPos + 6, 176, 0, 13, 13);
         }
 
-        // Draw loading section header bar
-        int loadBarX = this.leftPos + 17;
-        int loadBarY = this.topPos + 52;
-        boolean enabLoad = this.menu.isEnabLoad();
-        graphics.fill(loadBarX, loadBarY, loadBarX + 140, loadBarY + 1,
-                enabLoad ? 0xFFAA4444 : 0xFF884444);
+        boolean checkMeta = this.menu.isCheckMetadata();
+        if (checkMeta) {
+            graphics.blit(TEXTURE, this.leftPos + 23, this.topPos + 22, 176, 13, 11, 11);
+        }
 
-        // Draw unloading section header bar
-        int unloadBarY = this.topPos + 83;
+        boolean checkDict = this.menu.isCheckDict();
+        if (checkDict) {
+            graphics.blit(TEXTURE, this.leftPos + 37, this.topPos + 22, 176, 24, 11, 11);
+        }
+
+        boolean checkNbt = this.menu.isCheckNbt();
+        if (checkNbt) {
+            graphics.blit(TEXTURE, this.leftPos + 51, this.topPos + 22, 176, 46, 11, 11);
+        }
+
+        boolean enabLoad = this.menu.isEnabLoad();
+        if (!enabLoad) {
+            graphics.blit(TEXTURE, this.leftPos + 7, this.topPos + 52, 176, 35, 11, 11);
+            graphics.blit(TEXTURE, this.leftPos + 8, this.topPos + 65, 0, 201, 160, 16);
+        }
+
         boolean enabUnload = this.menu.isEnabUnload();
-        graphics.fill(loadBarX, unloadBarY, loadBarX + 140, unloadBarY + 1,
-                enabUnload ? 0xFF4444AA : 0xFF444488);
+        if (!enabUnload) {
+            graphics.blit(TEXTURE, this.leftPos + 7, this.topPos + 83, 176, 35, 11, 11);
+            graphics.blit(TEXTURE, this.leftPos + 8, this.topPos + 96, 0, 201, 160, 16);
+        }
+
+        int redMode = this.menu.getRedSignalMode();
+        switch (redMode) {
+            case 1 -> graphics.blit(TEXTURE, this.leftPos + 65, this.topPos + 22, 176, 57, 11, 11);
+            case 2 -> graphics.blit(TEXTURE, this.leftPos + 65, this.topPos + 22, 176, 68, 11, 11);
+        }
+
+        int liquidMode = this.menu.getLiquidMode();
+        switch (liquidMode) {
+            case 0 -> graphics.blit(TEXTURE, this.leftPos + 23, this.topPos + 36, 202, 101, 13, 13);
+            case 1 -> graphics.blit(TEXTURE, this.leftPos + 23, this.topPos + 36, 176, 101, 13, 13);
+            case 2 -> graphics.blit(TEXTURE, this.leftPos + 23, this.topPos + 36, 189, 101, 13, 13);
+        }
+
+        // TODO: per-slot NOT mode indicators (modeItem bitfield not yet ported)
     }
 
     @Override
     protected void renderLabels(GuiGraphics graphics, int mouseX, int mouseY) {
-        // Draw wait mode display (centered at top)
+        // Draw wait mode display (centered at top, original: 57-len, 9)
         int craneMode = this.menu.getCraneMode();
         String modeStr;
         if (craneMode >= 0 && craneMode < TileEntityCrane.MODE_NAMES.length) {
@@ -87,63 +105,14 @@ public class GuiCrane extends AbstractContainerScreen<ContainerCrane> {
         int modeLen = this.font.width(modeStr) / 2;
         graphics.drawString(this.font, modeStr, 57 - modeLen, 9, 0xFFFF00, true);
 
-        // Draw section labels
-        boolean enabLoad = this.menu.isEnabLoad();
-        boolean enabUnload = this.menu.isEnabUnload();
+        // Draw section labels (original positions)
+        String loadLabel = tr("gui.shincolle.crane.toship", "To Ship");
+        graphics.drawString(this.font, loadLabel, 21, 54, 0xFF5555, false);
 
-        // Loading section label
-        String loadLabel = "To Ship";
-        graphics.drawString(this.font, loadLabel, 21, 54,
-                enabLoad ? 0xFF5555 : 0x885555, false);
+        String unloadLabel = tr("gui.shincolle.crane.tochest", "To Chest");
+        graphics.drawString(this.font, unloadLabel, 21, 85, 0x000000, false);
 
-        // Unloading section label
-        String unloadLabel = "To Chest";
-        graphics.drawString(this.font, unloadLabel, 21, 85,
-                enabUnload ? 0x5555FF : 0x404040, false);
-
-        // Draw filter toggle labels with active/inactive colors
-        boolean checkMeta = this.menu.isCheckMetadata();
-        boolean checkDict = this.menu.isCheckDict();
-        boolean checkNbt = this.menu.isCheckNbt();
-
-        graphics.drawString(this.font, "Meta", 23, 34,
-                checkMeta ? 0x00FF00 : 0x888888, true);
-        graphics.drawString(this.font, "Dict", 37, 34,
-                checkDict ? 0x00FF00 : 0x888888, true);
-        graphics.drawString(this.font, "NBT", 51, 34,
-                checkNbt ? 0x00FF00 : 0x888888, true);
-
-        // Draw ship info area (right side)
-        boolean active = this.menu.isActive();
-        boolean paired = this.menu.isPaired();
-
-        // Status indicator
-        String statusStr;
-        int statusColor;
-        if (active && paired) {
-            statusStr = "Active";
-            statusColor = 0x00FF00;
-        } else if (active) {
-            statusStr = "No Chest";
-            statusColor = 0xFFAA00;
-        } else {
-            statusStr = "Inactive";
-            statusColor = 0x888888;
-        }
-        graphics.drawString(this.font, statusStr, 80, 24, statusColor, true);
-
-        // Paired status
-        String pairedStr = paired ? "Paired" : "Not Paired";
-        graphics.drawString(this.font, pairedStr, 80, 34,
-                paired ? 0x55FF55 : 0x555555, true);
-
-        // Draw 3x3 grid labels for loading filters
-        String loadFilterLabel = "Loading Filters";
-        graphics.drawString(this.font, loadFilterLabel, 17, 62, 0xAA5555, true);
-
-        // Draw 3x3 grid labels for unloading filters
-        String unloadFilterLabel = "Unloading Filters";
-        graphics.drawString(this.font, unloadFilterLabel, 107, 62, 0x5555AA, true);
+        // TODO: draw ship name when crane is paired (requires TileEntityCrane.getShip())
 
         // Player inventory label
         graphics.drawString(this.font, this.playerInventoryTitle, this.inventoryLabelX, this.inventoryLabelY, 0x404040,

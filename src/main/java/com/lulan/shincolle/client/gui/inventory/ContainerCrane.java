@@ -77,20 +77,14 @@ public class ContainerCrane extends AbstractContainerMenu {
 
         IItemHandler handler = tile != null ? tile.getInventory() : new ItemStackHandler(GHOST_SLOT_COUNT);
 
-        // Loading filter slots (0-8): 3x3 grid on the left
-        for (int row = 0; row < 3; row++) {
-            for (int col = 0; col < 3; col++) {
-                addSlot(new SlotCrane(handler, LOADING_FILTER_START + row * 3 + col,
-                        17 + col * 18, 17 + row * 18));
-            }
+        // Loading filter slots (0-8): row at y=65 (original layout)
+        for (int i = 0; i < LOADING_FILTER_COUNT; i++) {
+            addSlot(new SlotCrane(handler, LOADING_FILTER_START + i, 8 + i * 18, 65));
         }
 
-        // Unloading filter slots (9-17): 3x3 grid on the right
-        for (int row = 0; row < 3; row++) {
-            for (int col = 0; col < 3; col++) {
-                addSlot(new SlotCrane(handler, UNLOADING_FILTER_START + row * 3 + col,
-                        107 + col * 18, 17 + row * 18));
-            }
+        // Unloading filter slots (9-17): row at y=96 (original layout)
+        for (int i = 0; i < UNLOADING_FILTER_COUNT; i++) {
+            addSlot(new SlotCrane(handler, UNLOADING_FILTER_START + i, 8 + i * 18, 96));
         }
 
         // Player inventory

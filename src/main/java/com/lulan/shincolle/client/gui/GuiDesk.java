@@ -122,6 +122,9 @@ public class GuiDesk extends AbstractContainerScreen<ContainerDesk> {
     private int listFocus = LISTCLICK_TEAM;
     private EditBox textField;
 
+    private static final float GUI_SCALE = 1.25F;
+    private static final float GUI_SCALE_INV = 1.0F / GUI_SCALE;
+
     public GuiDesk(ContainerDesk menu, Inventory playerInv, Component title) {
         super(menu, playerInv, title);
         this.imageWidth = 256;
@@ -338,7 +341,11 @@ public class GuiDesk extends AbstractContainerScreen<ContainerDesk> {
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         this.renderBackground(g);
-        super.render(g, mouseX, mouseY, partialTick);
+        // Apply 1.25x scale (matching original 1.10.2)
+        g.pose().pushPose();
+        g.pose().scale(GUI_SCALE, GUI_SCALE, 1.0F);
+        super.render(g, (int) (mouseX * GUI_SCALE_INV), (int) (mouseY * GUI_SCALE_INV), partialTick);
+        g.pose().popPose();
 
         // Draw text field for team create/rename
         if (this.textField != null && this.textField.isVisible()) {
@@ -349,8 +356,8 @@ public class GuiDesk extends AbstractContainerScreen<ContainerDesk> {
 
         // Book-specific tooltips
         if (this.guiFunc == 2) {
-            int localX = mouseX - this.leftPos;
-            int localY = mouseY - this.topPos;
+            int localX = (int) (mouseX * GUI_SCALE_INV) - this.leftPos;
+            int localY = (int) (mouseY * GUI_SCALE_INV) - this.topPos;
 
             // Item icon tooltip
             ItemStack hovered = GuiBook.getHoveredItem(bookChapNum, bookPageNum, localX, localY);
@@ -880,8 +887,9 @@ public class GuiDesk extends AbstractContainerScreen<ContainerDesk> {
             this.textField.mouseClicked(mouseX, mouseY, button);
         }
 
-        int posX = (int) mouseX;
-        int posY = (int) mouseY;
+        // Scale mouse to unscaled GUI coordinates (original uses GuiScaleInv)
+        int posX = (int) (mouseX * GUI_SCALE_INV);
+        int posY = (int) (mouseY * GUI_SCALE_INV);
         int xClick = posX - this.leftPos;
         int yClick = posY - this.topPos;
 
@@ -946,8 +954,8 @@ public class GuiDesk extends AbstractContainerScreen<ContainerDesk> {
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
         // Entity gallery rotation via mouse drag
         if (this.guiFunc == 2 && (bookChapNum == 4 || bookChapNum == 5) && bookPageNum > 0) {
-            int localX = (int) mouseX - this.leftPos;
-            int localY = (int) mouseY - this.topPos;
+            int localX = (int) (mouseX * GUI_SCALE_INV) - this.leftPos;
+            int localY = (int) (mouseY * GUI_SCALE_INV) - this.topPos;
             // Only drag within the model area (18,45 to 110,157)
             if (localX >= 18 && localX <= 110 && localY >= 45 && localY <= 157) {
                 mRotateX += (float) dragX * 1.5F;

@@ -76,10 +76,10 @@ public class ContainerLargeShipyard extends AbstractContainerMenu {
         // Output slot (0): right side, below build type buttons
         addSlot(new SlotLargeShipyard(handler, OUTPUT_SLOT, 168, 51, true));
 
-        // Material/fuel slots (1-9): horizontal row
+        // Material/fuel slots (1-9): horizontal row (original: 7 + i*18 where i=1..9)
         for (int i = 0; i < MATERIAL_SLOT_COUNT; i++) {
             addSlot(new SlotLargeShipyard(handler, MATERIAL_SLOT_START + i,
-                    7 + i * 18, 116, false));
+                    25 + i * 18, 116, false));
         }
 
         // Player inventory: original uses (25, 141) for rows and (24, 199) for hotbar
@@ -89,7 +89,7 @@ public class ContainerLargeShipyard extends AbstractContainerMenu {
             }
         }
         for (int col = 0; col < 9; col++) {
-            addSlot(new Slot(playerInv, col, 25 + col * 18, 199));
+            addSlot(new Slot(playerInv, col, 24 + col * 18, 199));
         }
 
         addDataSlots(data);

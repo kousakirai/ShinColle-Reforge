@@ -603,20 +603,16 @@ public class GuiShipInventory extends AbstractContainerScreen<ContainerShipInven
     private void renderHPText(GuiGraphics graphics, BasicEntityShip ship) {
         int hpCurrent = Mth.ceil(ship.getHealth());
         int hpMax = Mth.ceil(ship.getMaxHealth());
-        String hpStr = hpCurrent + "/" + hpMax;
-        graphics.drawString(this.font, "HP", 118 - this.font.width("HP") - 2, 5, 0x00FFFF, true);
+        // original: "HP" label right-aligned at x=145, current HP at x=147, "/max" after
+        graphics.drawString(this.font, "HP", 145 - this.font.width("HP"), 6, 0x00FFFF, true);
 
         float hpRatio = hpMax > 0 ? (float) hpCurrent / (float) hpMax : 1.0f;
-        int hpTextColor;
-        if (hpRatio > 0.75f)
-            hpTextColor = 0x00CC00;
-        else if (hpRatio > 0.5f)
-            hpTextColor = 0xCCCC00;
-        else if (hpRatio > 0.25f)
-            hpTextColor = 0xCC6600;
-        else
-            hpTextColor = 0xCC0000;
-        graphics.drawString(this.font, hpStr, 118, 5, hpTextColor, true);
+        int hpColor = GuiHelper.getBonusPointColor(ship.getAttrs().getAttrsBonus(ID.AttrsBase.HP));
+        String curStr = String.valueOf(hpCurrent);
+        String maxStr = "/" + hpMax;
+        int curColor = hpCurrent < hpMax ? GuiHelper.getDarkerColor(hpColor, 0.8F) : hpColor;
+        graphics.drawString(this.font, curStr, 147, 6, curColor, true);
+        graphics.drawString(this.font, maxStr, 148 + this.font.width(curStr), 6, hpColor, true);
     }
 
     // ========== AI Page Label Rendering ==========

@@ -5,6 +5,7 @@ import com.lulan.shincolle.crafting.LargeRecipes;
 import com.lulan.shincolle.handler.ConfigHandler;
 import com.lulan.shincolle.init.ModBlockEntities;
 import com.lulan.shincolle.init.ModItems;
+import com.lulan.shincolle.item.IShipResourceItem;
 import com.lulan.shincolle.utility.LogHelper;
 
 import net.minecraft.core.BlockPos;
@@ -39,6 +40,7 @@ public class TileMultiGrudgeHeavy extends BasicTileInventory implements MenuProv
     public static final int SLOT_OUTPUT = 0;
     public static final int SLOT_FUEL = 1;
     private static final int POWER_INSTANT = 57600;
+    private static final int MAX_STOCK = 1000000;
     // Config values
     private static int POWER_MAX;
     private static int BUILD_SPEED;
@@ -352,21 +354,28 @@ public class TileMultiGrudgeHeavy extends BasicTileInventory implements MenuProv
             if (stack.isEmpty())
                 continue;
 
-            int matIndex = -1;
-            if (stack.is(ModItems.GRUDGE.get()))
-                matIndex = 0;
-            else if (stack.is(ModItems.ABYSS_METAL.get()))
-                matIndex = 1;
-            else if (stack.is(ModItems.AMMO.get()))
-                matIndex = 2;
-            else if (stack.is(ModItems.POLYMETAL_NODULE.get()))
-                matIndex = 3;
-            if (matIndex < 0)
-                continue;
+            // Use IShipResourceItem interface (matches original addMaterialStock)
+            if (stack.getItem() instanceof IShipResourceItem resource) {
+                // check max stock
+                boolean canAdd = true;
+                for (int j = 0; j < 4; j++) {
+                    if (matsStock[j] > MAX_STOCK) {
+                        canAdd = false;
+                        break;
+                    }
+                }
+                if (!canAdd) continue;
 
-            matsStock[matIndex] += stack.getCount();
-            inventory.setStackInSlot(i, ItemStack.EMPTY);
-            setChanged();
+                int[] addMats = resource.getResourceValue(0);
+                if (ConfigHandler.easyMode()) {
+                    for (int k = 0; k < 4; k++) addMats[k] *= 10;
+                }
+                for (int k = 0; k < 4; k++) {
+                    matsStock[k] += addMats[k];
+                }
+                stack.shrink(1);
+                setChanged();
+            }
         }
     }
 

@@ -1,6 +1,6 @@
 {
   "parent": "minecraft:block/cube_all",
   "textures": {
-    "all": "shincolle:block/vol_block"
+    "all": "shincolle:block/vol_core"
   }
 }
