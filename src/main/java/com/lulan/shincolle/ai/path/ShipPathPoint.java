@@ -6,6 +6,7 @@ import net.minecraft.util.Mth;
  * Path point for ship path navigator.
  * Ported from 1.10.2 ShipPathPoint.
  */
+@Deprecated(forRemoval = true)
 public class ShipPathPoint {
 
     public final int xCoord;

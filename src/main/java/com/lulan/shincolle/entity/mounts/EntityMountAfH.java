@@ -2,6 +2,7 @@ package com.lulan.shincolle.entity.mounts;
 
 import com.lulan.shincolle.ai.ShipCarrierAttackGoal;
 import com.lulan.shincolle.ai.ShipRangeAttackGoal;
+import com.lulan.shincolle.ai.path.ShipMoveControl;
 import com.lulan.shincolle.entity.BasicEntityMountLarge;
 
 import net.minecraft.world.entity.EntityDimensions;
@@ -27,5 +28,10 @@ public class EntityMountAfH extends BasicEntityMountLarge {
         super.setAIList();
         this.goalSelector.addGoal(11, new ShipCarrierAttackGoal(this));
         this.goalSelector.addGoal(12, new ShipRangeAttackGoal(this));
+    }
+
+    @Override
+    public ShipMoveControl getShipMoveControl() {
+        return (ShipMoveControl) this.getMoveControl();
     }
 }

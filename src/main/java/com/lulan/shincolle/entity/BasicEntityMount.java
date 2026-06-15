@@ -1,7 +1,7 @@
 package com.lulan.shincolle.entity;
 
-import com.lulan.shincolle.ai.path.ShipMoveHelper;
-import com.lulan.shincolle.ai.path.ShipPathNavigate;
+import com.lulan.shincolle.ai.path.ShipMoveControl;
+import com.lulan.shincolle.ai.path.ShipNavigation;
 import com.lulan.shincolle.network.ModNetworking;
 import com.lulan.shincolle.network.S2CEntitySyncPacket;
 import com.lulan.shincolle.reference.ID;
@@ -11,14 +11,12 @@ import com.lulan.shincolle.reference.unitclass.MissileData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
-import net.minecraft.world.entity.AgeableMob;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.TamableAnimal;
+import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.level.Level;
+import org.jetbrains.annotations.NotNull;
 
 import javax.annotation.Nullable;
 import java.util.EnumSet;
@@ -42,11 +40,7 @@ public abstract class BasicEntityMount extends TamableAnimal
      * host ship entity
      */
     protected BasicEntityShip host;
-    /**
-     * ship navigator
-     */
-    protected ShipPathNavigate shipNavigator;
-    protected ShipMoveHelper shipMoveHelper;
+    protected ShipMoveControl shipMoveControl;
     /**
      * mount-specific fields
      */
@@ -57,13 +51,10 @@ public abstract class BasicEntityMount extends TamableAnimal
     protected int revengeTime;
     protected float[] seatPos = new float[]{0F, 0F, 0F};
     protected float[] seatPos2 = new float[]{0F, 0F, 0F};
-
     protected BasicEntityMount(EntityType<? extends BasicEntityMount> type, Level level) {
         super(type, level);
         this.noCulling = true;
     }
-
-    // ========== Static Attribute Builder ==========
 
     public static AttributeSupplier.Builder createMountAttributes() {
         return TamableAnimal.createMobAttributes()
@@ -73,6 +64,16 @@ public abstract class BasicEntityMount extends TamableAnimal
                 .add(Attributes.KNOCKBACK_RESISTANCE, 0.0D)
                 .add(Attributes.ARMOR, 0.0D)
                 .add(Attributes.ARMOR_TOUGHNESS, 0.0D);
+    }
+
+    // ========== Static Attribute Builder ==========
+
+    /**
+     * ship navigator
+     */
+    @Override
+    protected @NotNull ShipNavigation createNavigation(@NotNull Level level) {
+        return new ShipNavigation(this, level);
     }
 
     // ========== Host Management ==========
@@ -337,13 +338,13 @@ public abstract class BasicEntityMount extends TamableAnimal
 
     public Entity getEntityTarget() {
         if (this.host != null)
-            return this.host.getEntityTarget();
+            return this.host.getTarget();
         return null;
     }
 
     public void setEntityTarget(Entity target) {
         if (this.host != null)
-            this.host.setEntityTarget(target);
+            this.host.setTarget((LivingEntity) target);
     }
 
     public Entity getEntityRevengeTarget() {
@@ -425,12 +426,8 @@ public abstract class BasicEntityMount extends TamableAnimal
 
     // ========== IShipNavigator ==========
 
-    public ShipPathNavigate getShipNavigate() {
-        return this.shipNavigator;
-    }
-
-    public ShipMoveHelper getShipMoveHelper() {
-        return this.shipMoveHelper;
+    public ShipMoveControl getShipMoveHelper() {
+        return this.shipMoveControl;
     }
 
     public boolean canFly() {

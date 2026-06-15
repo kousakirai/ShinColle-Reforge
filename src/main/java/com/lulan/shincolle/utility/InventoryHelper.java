@@ -132,7 +132,7 @@ public class InventoryHelper {
 
             if (opt.isPresent()) {
                 IFluidHandlerItem fh = opt.orElse(null);
-                
+
 
                 int tanks = fh.getTanks();
                 for (int i = 0; i < tanks; i++) {
@@ -478,7 +478,7 @@ public class InventoryHelper {
         int maxSlots = handler.getSlots();
 
         if (slots != null) {
-            
+
             maxSlots = slots.length;
         }
 

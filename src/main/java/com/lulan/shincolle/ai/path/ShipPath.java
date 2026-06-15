@@ -7,6 +7,7 @@ import net.minecraft.world.phys.Vec3;
  * Path container for ship path navigator - an ordered array of ShipPathPoints.
  * Ported from 1.10.2 ShipPath.
  */
+@Deprecated(forRemoval = true)
 public class ShipPath {
 
     private final ShipPathPoint[] points;

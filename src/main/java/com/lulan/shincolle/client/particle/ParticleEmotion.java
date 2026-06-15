@@ -25,11 +25,10 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 @OnlyIn(Dist.CLIENT)
 public class ParticleEmotion extends Particle {
 
-	private static final ResourceLocation TEXTURE = new ResourceLocation("shincolle",
-			"textures/particles/particleemotion.png");
-	public static final int EMO_NUMBER = 30;
-
-	private final Entity host;
+    public static final int EMO_NUMBER = 30;
+    private static final ResourceLocation TEXTURE = new ResourceLocation("shincolle",
+            "textures/particles/particleemotion.png");
+    private final Entity host;
     private final int particleType;
     private final float particleIconX;
     private final float particleIconY;

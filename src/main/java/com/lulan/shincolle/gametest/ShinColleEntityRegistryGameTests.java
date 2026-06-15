@@ -218,7 +218,7 @@ public final class ShinColleEntityRegistryGameTests {
                 "shincolle_set_unit_name");
 
         CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
-        
+
 
         int teamId = 2;
         String expectedName = "Unit-Alpha";
@@ -246,7 +246,7 @@ public final class ShinColleEntityRegistryGameTests {
                 "shincolle_swap_ship");
 
         CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
-        
+
 
         int teamId = 3;
         capa.setSelectTeam(teamId);
@@ -286,7 +286,7 @@ public final class ShinColleEntityRegistryGameTests {
                 "shincolle_desk_break_by_id");
 
         CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
-        
+
 
         int myTid = 8001;
         int allyTid = 8002;
@@ -322,7 +322,7 @@ public final class ShinColleEntityRegistryGameTests {
                 "shincolle_desk_unban_by_id");
 
         CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
-        
+
 
         int myTid = 8101;
         int bannedTid = 8102;

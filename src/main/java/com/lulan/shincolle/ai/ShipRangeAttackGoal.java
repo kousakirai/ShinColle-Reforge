@@ -7,6 +7,7 @@ import com.lulan.shincolle.reference.ID;
 import com.lulan.shincolle.utility.DebugProfiler;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.goal.Goal;
 
@@ -60,8 +61,7 @@ public class ShipRangeAttackGoal extends Goal {
                 }
             }
 
-            Entity target = this.host.getEntityTarget();
-
+            LivingEntity target = this.entity.getTarget();
             if (target != null && target.isAlive() &&
                     ((this.host.getAttackType(ID.F.AtkType_Light) && this.host.getStateFlag(ID.F.UseAmmoLight)
                             && this.host.hasAmmoLight()) ||
@@ -93,16 +93,16 @@ public class ShipRangeAttackGoal extends Goal {
 
     @Override
     public boolean canContinueToUse() {
-        if (this.target != null && this.target.isAlive() && !this.host.getShipNavigate().noPath()) {
-            return true;
-        }
-        return this.canUse();
+        return this.target != null
+                && this.target.isAlive()
+                && !this.host.getIsSitting();
     }
 
     @Override
     public void stop() {
         this.target = null;
         this.onSightTime = 0;
+        this.entity.getNavigation().stop();
     }
 
     @Override
@@ -115,7 +115,7 @@ public class ShipRangeAttackGoal extends Goal {
             }
 
             // update attributes periodically
-            if (this.entity.tickCount % 64 == 0) {
+            if (this.entity.tickCount % 32 == 0) {
                 this.updateAttackParms();
             }
 
@@ -136,15 +136,10 @@ public class ShipRangeAttackGoal extends Goal {
                     return;
                 }
             }
-
+            System.out.println("onSightTime: " + this.onSightTime);
             // stop moving if in range and has sight
-            if (distSq < this.rangeSq && onSight && !this.host.getStateFlag(ID.F.UseMelee)) {
-                this.host.getShipNavigate().clearPathEntity();
-            } else {
-                // chase target
-                if (this.entity.tickCount % 32 == 0) {
-                    this.host.getShipNavigate().tryMoveToEntityLiving(this.target, 1.0D);
-                }
+            if (distSq > this.rangeSq && !onSight) {
+                this.entity.getNavigation().moveTo(this.target, 1.0D);
             }
 
             this.entity.getLookControl().setLookAt(this.target, 30.0F, 30.0F);

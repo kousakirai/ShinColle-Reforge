@@ -537,7 +537,7 @@ public class C2SGUIInputPacket {
     /**
      * Set ship sitting state (team-aware).
      * values: 0:player eid, 1:(unused dim), 2:mode, 3:entity id
-     *
+     * <p>
      * In single mode: toggles sit for the clicked ship only.
      * In group/formation mode: toggles sit for all ships in the current team.
      * If the clicked ship is not in any team, toggles sit for that ship only.

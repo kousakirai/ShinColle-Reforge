@@ -5,12 +5,9 @@ import com.lulan.shincolle.handler.ConfigHandler;
 import com.lulan.shincolle.reference.ID;
 import com.lulan.shincolle.server.ServerDataManager;
 import net.minecraft.world.entity.*;
-import net.minecraft.world.entity.decoration.HangingEntity;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.monster.Slime;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.entity.projectile.FireworkRocketEntity;
-import net.minecraft.world.entity.projectile.FishingHook;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.phys.AABB;
 
@@ -538,8 +535,8 @@ public class TargetHelper {
                 return !checkSameOwner(host, target);
             }
 
-			return false;
-		}
-	}
+            return false;
+        }
+    }
 
 }

@@ -1,9 +1,10 @@
 package com.lulan.shincolle.utility;
 
-import com.lulan.shincolle.ai.path.ShipMoveHelper;
-import com.lulan.shincolle.ai.path.ShipPathNavigate;
 import com.lulan.shincolle.capability.CapaTeitoku;
-import com.lulan.shincolle.entity.*;
+import com.lulan.shincolle.entity.BasicEntityShip;
+import com.lulan.shincolle.entity.BasicEntityShipHostile;
+import com.lulan.shincolle.entity.IShipAttackBase;
+import com.lulan.shincolle.entity.IShipFloating;
 import com.lulan.shincolle.handler.ConfigHandler;
 import com.lulan.shincolle.init.ModEntities;
 import com.lulan.shincolle.reference.ID;
@@ -68,7 +69,6 @@ public class EntityHelper {
     public static void updateShipNavigator(BasicEntityShip ship) {
         updateShipDepth(ship);
         updateShipFloating(ship);
-        tickCustomNavigator(ship);
     }
 
     /**
@@ -79,9 +79,6 @@ public class EntityHelper {
             updateShipDepth(floating);
             updateShipFloatingGeneric(ship, floating);
         }
-        if (ship instanceof IShipNavigator) {
-            tickCustomNavigator(ship);
-        }
     }
 
     /**
@@ -91,43 +88,7 @@ public class EntityHelper {
      * Also clears custom path when sitting or leashed.
      */
     private static void tickCustomNavigator(Mob entity) {
-        if (!(entity instanceof IShipNavigator navEntity))
-            return;
 
-        ShipPathNavigate pathNavi = navEntity.getShipNavigate();
-        ShipMoveHelper moveHelper = navEntity.getShipMoveHelper();
-
-        if (pathNavi == null || moveHelper == null)
-            return;
-
-        if (!pathNavi.noPath()) {
-            // clear vanilla navigator when custom path is active
-            entity.getNavigation().stop();
-
-            // clear if sitting or leashed
-            if (entity instanceof BasicEntityShip ship) {
-                if (ship.isOrderedToSit() || ship.isLeashed()) {
-                    pathNavi.clearPathEntity();
-                    return;
-                }
-            }
-
-            // tick custom navigator and move helper
-            pathNavi.onUpdateNavigation();
-            moveHelper.onUpdateMoveHelper();
-
-            // [PORT] 1.10.2 -> 1.20.1: apply movement immediately for custom
-            // ship navigation.
-            // Vanilla MoveControl can overwrite forward input before travel() in
-            // aiStep, causing ships to stand still while attacking/chasing.
-            entity.travel(new Vec3(entity.xxa, entity.yya, entity.zza));
-        }
-
-        // [PORT] 1.10.2 -> 1.20.1: keep vanilla path disabled in liquid to avoid
-        // mixed vanilla/custom navigation steering.
-        if (!entity.getNavigation().isDone() && checkEntityIsInLiquid(entity)) {
-            entity.getNavigation().stop();
-        }
     }
 
     /**
@@ -312,14 +273,11 @@ public class EntityHelper {
      */
     public static int checkEntityMovingType(Entity entity) {
         if (entity instanceof IShipAttackBase ship) {
-            switch (ship.getDamageType()) {
-                case ID.ShipDmgType.AIRPLANE:
-                    return 1;
-                case ID.ShipDmgType.SUBMARINE:
-                    return 2;
-                default:
-                    return 0;
-            }
+            return switch (ship.getDamageType()) {
+                case ID.ShipDmgType.AIRPLANE -> 1;
+                case ID.ShipDmgType.SUBMARINE -> 2;
+                default -> 0;
+            };
         } else if (entity instanceof WaterAnimal || entity instanceof Guardian) {
             return 2;
         } else if (entity instanceof Blaze || entity instanceof WitherBoss ||

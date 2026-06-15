@@ -1,12 +1,10 @@
 package com.lulan.shincolle.entity;
 
-import com.lulan.shincolle.ai.path.ShipMoveHelper;
-import com.lulan.shincolle.ai.path.ShipPathNavigate;
+import com.lulan.shincolle.ai.path.ShipMoveControl;
 
 public interface IShipNavigator {
-    ShipPathNavigate getShipNavigate();
 
-    ShipMoveHelper getShipMoveHelper();
+    ShipMoveControl getShipMoveControl();
 
     boolean canFly();
 

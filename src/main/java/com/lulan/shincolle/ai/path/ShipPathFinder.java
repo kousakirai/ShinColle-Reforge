@@ -20,6 +20,7 @@ import java.util.Map;
  * Ignores gravity and buoyancy to build paths in 3D.
  * Ported from 1.10.2 ShipPathFinder.
  */
+@Deprecated(forRemoval = true)
 public class ShipPathFinder {
 
     private final BlockGetter world;

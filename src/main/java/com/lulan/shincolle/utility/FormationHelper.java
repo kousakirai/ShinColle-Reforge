@@ -419,10 +419,10 @@ public class FormationHelper {
 
                 Entity mount = ship.getVehicle();
                 if (mount instanceof BasicEntityMount bm) {
-                    bm.getShipNavigate().tryMoveToXYZ(x, y, z, 1D);
+                    bm.getNavigation().moveTo(x, y, z, 1D);
                     bm.getLookControl().setLookAt(x, y, z, 30F, 40F);
                 } else {
-                    ship.getShipNavigate().tryMoveToXYZ(x, y, z, 1D);
+                    ship.getNavigation().moveTo(x, y, z, 1D);
                     ship.getLookControl().setLookAt(x, y, z, 30F, 40F);
                 }
             }
@@ -460,9 +460,9 @@ public class FormationHelper {
 
                 Entity mount = ship.getVehicle();
                 if (mount instanceof BasicEntityMount bm) {
-                    bm.getShipNavigate().tryMoveToEntityLiving(guarded, 1D);
+                    bm.getNavigation().moveTo(guarded, 1D);
                 } else {
-                    ship.getShipNavigate().tryMoveToEntityLiving(guarded, 1D);
+                    ship.getNavigation().moveTo(guarded, 1D);
                 }
             }
         }

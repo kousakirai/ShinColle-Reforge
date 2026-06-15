@@ -1,6 +1,5 @@
 package com.lulan.shincolle.ai;
 
-import com.lulan.shincolle.ai.path.ShipPathNavigate;
 import com.lulan.shincolle.entity.IShipAircraftAttack;
 import com.lulan.shincolle.entity.IShipCannonAttack;
 import com.lulan.shincolle.entity.IShipGuardian;
@@ -13,6 +12,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.phys.AABB;
 
 import java.util.EnumSet;
@@ -36,7 +36,7 @@ public class ShipGuardingGoal extends Goal {
 
     private final IShipGuardian host;
     private final Mob hostEntity;
-    private final ShipPathNavigate shipNavigator;
+    private final PathNavigation shipNavigator;
     private final TargetHelper.Sorter targetSorter;
     private final TargetHelper.Selector targetSelector;
     private final double[] guardPosOld;              // last known guarded entity position
@@ -61,7 +61,7 @@ public class ShipGuardingGoal extends Goal {
     public ShipGuardingGoal(IShipGuardian host) {
         this.host = host;
         this.hostEntity = (Mob) host;
-        this.shipNavigator = host.getShipNavigate();
+        this.shipNavigator = hostEntity.getNavigation();
         this.targetSorter = new TargetHelper.Sorter(hostEntity);
         this.targetSelector = new TargetHelper.Selector(hostEntity);
         this.distSq = 1D;
@@ -125,7 +125,7 @@ public class ShipGuardingGoal extends Goal {
         }
 
         // other cases: still has path or can re-evaluate
-        return (shipNavigator != null && !shipNavigator.noPath()) || canUse();
+        return (shipNavigator != null && !shipNavigator.isDone()) || canUse();
     }
 
     @Override
@@ -141,7 +141,7 @@ public class ShipGuardingGoal extends Goal {
         this.isMoving = false;
         this.findCooldown = 10;
         if (this.shipNavigator != null) {
-            this.shipNavigator.clearPathEntity();
+            this.shipNavigator.stop();
         }
     }
 
@@ -216,7 +216,7 @@ public class ShipGuardingGoal extends Goal {
         if (this.distSq <= this.minDistSq) {
             this.isMoving = false;
             if (this.shipNavigator != null) {
-                this.shipNavigator.clearPathEntity();
+                this.shipNavigator.stop();
             }
         }
 
@@ -224,7 +224,7 @@ public class ShipGuardingGoal extends Goal {
         if (this.findCooldown <= 0) {
             this.findCooldown = 32;
             if (this.shipNavigator != null) {
-                this.isMoving = this.shipNavigator.tryMoveToXYZ(pos[0], pos[1], pos[2], 1D);
+                this.isMoving = this.shipNavigator.moveTo(pos[0], pos[1], pos[2], 1D);
             }
         }
 

@@ -143,105 +143,12 @@ public class ShipSpawnEgg extends BasicItem {
         return 0;
     }
 
-	// ===== Right Click on Block: Spawn Entity =====
+    // ===== Right Click on Block: Spawn Entity =====
 
-	@Override
-	public InteractionResult useOn(UseOnContext context) {
-		Level level = context.getLevel();
-		if (level.isClientSide()) {
-			return InteractionResult.SUCCESS;
-		}
-
-		Player player = context.getPlayer();
-		ItemStack stack = context.getItemInHand();
-		BlockPos blockPos = context.getClickedPos();
-		Direction direction = context.getClickedFace();
-
-		// check block editability
-        assert player != null;
-        if (!level.mayInteract(player, blockPos)) {
-			return InteractionResult.FAIL;
-		}
-
-		// spawn position: on top of the clicked face
-		BlockPos spawnPos = blockPos.relative(direction);
-		double x = spawnPos.getX() + 0.5D;
-		double y = spawnPos.getY();
-		double z = spawnPos.getZ() + 0.5D;
-
-		CompoundTag nbt = stack.getTag();
-
-		int shipClass;
-        if (hasSpecificShipClassTag(nbt)) {
-			shipClass = getShipClass(stack);
-		} else {
-			// [PORT] 1.10.2 -> 1.20.1: Random ship rolls happen dynamically if no ship class is present.
-			int buildType = (nbt != null && nbt.contains("BuildType")) ? nbt.getByte("BuildType") : 0;
-			int[] mats = new int[4];
-			if (nbt != null) {
-				mats[0] = nbt.getInt("Grudge");
-				mats[1] = nbt.getInt("Abyssium");
-				mats[2] = nbt.getInt("Ammo");
-				mats[3] = nbt.getInt("Polymetal");
-			}
-			shipClass = com.lulan.shincolle.crafting.ShipCalc.rollShipType(buildType, mats, level.random);
-		}
-
-		// XP cost for saved eggs (eggs with stored ship data)
-		if (!consumeSavedEggXpCost(player, nbt)) {
-			return InteractionResult.FAIL;
-		}
-
-		// spawn entity
-		ServerLevel serverLevel = (ServerLevel) level;
-		Entity entity = createShipFromClass(serverLevel, shipClass);
-
-		if (entity == null) {
-			LogHelper.warn("Failed to create ship entity for class: " + shipClass);
-			return InteractionResult.FAIL;
-		}
-
-		entity.moveTo(x, y, z, player.getYRot(), 0F);
-
-		if (entity instanceof BasicEntityShip ship) {
-			// init ship from egg data
-			initShipFromEgg(ship, stack, player);
-
-			// [PORT] Preserve legacy priority: renamed egg hover-name first, explicit NBT
-			// name overrides afterward.
-			applyEggHoverName(ship, stack);
-
-			// set custom name if present
-			applyEggCustomName(ship, nbt);
-
-			// [PORT] Keep fresh-spawn ships combat-capable by seeding baseline resources
-			// when no saved state is provided.
-			bootstrapFreshSpawnCombatState(ship, nbt);
-
-			level.addFreshEntity(ship);
-
-			// recalc attributes
-			ship.calcShipAttributes(31, true);
-		} else if (entity instanceof BasicEntityShipHostile hostile) {
-			// [PORT] 1.10.2 -> 1.20.1: keep hostile spawn silhouette larger than
-			// regular ships by biasing hostile scale level away from 0.
-			hostile.initAttrs(1 + level.random.nextInt(3));
-			level.addFreshEntity(hostile);
-			hostile.playAmbientSound();
-		}
-
-		// consume item in non-creative
-		if (!player.getAbilities().instabuild) {
-			stack.shrink(1);
-		}
-
-		return InteractionResult.CONSUME;
-	}
-
-	private static boolean consumeSavedEggXpCost(Player player, CompoundTag nbt) {
-		if (player == null || nbt == null) {
-			return true;
-		}
+    private static boolean consumeSavedEggXpCost(Player player, CompoundTag nbt) {
+        if (player == null || nbt == null) {
+            return true;
+        }
 
         if (player.getAbilities().instabuild || !nbt.contains(TAG_STATE_MINOR)) {
             return true;
@@ -275,8 +182,6 @@ public class ShipSpawnEgg extends BasicItem {
         }
     }
 
-    // ===== Right Click on Block: Spawn Entity =====
-
     private static Component resolveEggCustomName(CompoundTag nbt) {
         if (nbt == null) {
             return null;
@@ -309,6 +214,8 @@ public class ShipSpawnEgg extends BasicItem {
 
         return Component.literal(jsonName);
     }
+
+    // ===== Right Click on Block: Spawn Entity =====
 
     private static String resolveEggOwnerName(CompoundTag nbt) {
         if (nbt == null) {
@@ -395,7 +302,7 @@ public class ShipSpawnEgg extends BasicItem {
             ship.tame(player);
             ship.setOwnerUUID(player.getUUID());
         }
-        ship.setEntityTarget(null);
+        ship.setTarget(null);
 
         // set owner
         CapaTeitoku capa = player != null ? player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null) : null;
@@ -422,6 +329,7 @@ public class ShipSpawnEgg extends BasicItem {
 
         // set can drop flag
         ship.setStateFlag(ID.F.CanDrop, true);
+        ship.tickCount = 0;
     }
 
     /**
@@ -514,8 +422,6 @@ public class ShipSpawnEgg extends BasicItem {
         ENTITY_MAP.put(ID.ShipClass.SSU511 + MOB_OFFSET, ModEntities.SS_U511_MOB);
     }
 
-    // ===== Entity Creation =====
-
     /**
      * Get the texture icon index for a given ship class.
      * Used by ItemProperties to select model overrides.
@@ -596,6 +502,101 @@ public class ShipSpawnEgg extends BasicItem {
             default:
                 return 0;
         }
+    }
+
+    // ===== Entity Creation =====
+
+    @Override
+    public InteractionResult useOn(UseOnContext context) {
+        Level level = context.getLevel();
+        if (level.isClientSide()) {
+            return InteractionResult.SUCCESS;
+        }
+
+        Player player = context.getPlayer();
+        ItemStack stack = context.getItemInHand();
+        BlockPos blockPos = context.getClickedPos();
+        Direction direction = context.getClickedFace();
+
+        // check block editability
+        assert player != null;
+        if (!level.mayInteract(player, blockPos)) {
+            return InteractionResult.FAIL;
+        }
+
+        // spawn position: on top of the clicked face
+        BlockPos spawnPos = blockPos.relative(direction);
+        double x = spawnPos.getX() + 0.5D;
+        double y = spawnPos.getY();
+        double z = spawnPos.getZ() + 0.5D;
+
+        CompoundTag nbt = stack.getTag();
+
+        int shipClass;
+        if (hasSpecificShipClassTag(nbt)) {
+            shipClass = getShipClass(stack);
+        } else {
+            // [PORT] 1.10.2 -> 1.20.1: Random ship rolls happen dynamically if no ship class is present.
+            int buildType = (nbt != null && nbt.contains("BuildType")) ? nbt.getByte("BuildType") : 0;
+            int[] mats = new int[4];
+            if (nbt != null) {
+                mats[0] = nbt.getInt("Grudge");
+                mats[1] = nbt.getInt("Abyssium");
+                mats[2] = nbt.getInt("Ammo");
+                mats[3] = nbt.getInt("Polymetal");
+            }
+            shipClass = com.lulan.shincolle.crafting.ShipCalc.rollShipType(buildType, mats, level.random);
+        }
+
+        // XP cost for saved eggs (eggs with stored ship data)
+        if (!consumeSavedEggXpCost(player, nbt)) {
+            return InteractionResult.FAIL;
+        }
+
+        // spawn entity
+        ServerLevel serverLevel = (ServerLevel) level;
+        Entity entity = createShipFromClass(serverLevel, shipClass);
+
+        if (entity == null) {
+            LogHelper.warn("Failed to create ship entity for class: " + shipClass);
+            return InteractionResult.FAIL;
+        }
+
+        entity.moveTo(x, y, z, player.getYRot(), 0F);
+
+        if (entity instanceof BasicEntityShip ship) {
+            // init ship from egg data
+            initShipFromEgg(ship, stack, player);
+
+            // [PORT] Preserve legacy priority: renamed egg hover-name first, explicit NBT
+            // name overrides afterward.
+            applyEggHoverName(ship, stack);
+
+            // set custom name if present
+            applyEggCustomName(ship, nbt);
+
+            // [PORT] Keep fresh-spawn ships combat-capable by seeding baseline resources
+            // when no saved state is provided.
+            bootstrapFreshSpawnCombatState(ship, nbt);
+
+            level.addFreshEntity(ship);
+
+            // recalc attributes
+            ship.calcShipAttributes(31, true);
+        } else if (entity instanceof BasicEntityShipHostile hostile) {
+            // [PORT] 1.10.2 -> 1.20.1: keep hostile spawn silhouette larger than
+            // regular ships by biasing hostile scale level away from 0.
+            hostile.initAttrs(1 + level.random.nextInt(3));
+            level.addFreshEntity(hostile);
+            hostile.playAmbientSound();
+        }
+
+        // consume item in non-creative
+        if (!player.getAbilities().instabuild) {
+            stack.shrink(1);
+        }
+
+        return InteractionResult.CONSUME;
     }
 
     /**

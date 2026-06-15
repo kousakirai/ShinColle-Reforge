@@ -25,6 +25,7 @@ public class ParticleSpray extends TextureSheetParticle {
     private final int ptype;
     private float pScale;
     private double speedLimit;
+
     /**
      * Constructor with explicit position and motion.
      */

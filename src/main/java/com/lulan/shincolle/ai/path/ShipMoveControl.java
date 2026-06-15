@@ -10,6 +10,7 @@ import com.lulan.shincolle.utility.EntityHelper;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.ai.control.MoveControl;
 
 /**
  * Custom move helper for ship/airplane entities.
@@ -18,24 +19,19 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
  * <p>
  * Ported from 1.10.2 ShipMoveHelper (standalone, not extending vanilla).
  */
-public class ShipMoveHelper {
+public class ShipMoveControl extends MoveControl {
 
     private final Mob entity;
     private final IShipNavigator entityN;
     private final float rotateLimit;
-    private double posX;
-    private double posY;
-    private double posZ;
-    private double speed;
-    private Action action = Action.WAIT;
+    private final float speedModifier;
 
-    public ShipMoveHelper(Mob entity, float rotLimit) {
+    public ShipMoveControl(Mob entity, float rotLimit, float speedModifier) {
+        super(entity);
         this.entity = entity;
         this.entityN = (IShipNavigator) entity;
-        this.posX = entity.getX();
-        this.posY = entity.getY();
-        this.posZ = entity.getZ();
         this.rotateLimit = rotLimit;
+        this.speedModifier = speedModifier;
     }
 
     /**
@@ -51,36 +47,21 @@ public class ShipMoveHelper {
     }
 
     public boolean isUpdating() {
-        return this.action == Action.MOVE_TO;
-    }
-
-    public double getSpeed() {
-        return this.speed;
-    }
-
-    /**
-     * Set destination and switch to MOVE_TO state
-     */
-    public void setMoveTo(double x, double y, double z, double speed) {
-        this.posX = x;
-        this.posY = y;
-        this.posZ = z;
-        this.speed = speed;
-        this.action = Action.MOVE_TO;
+        return this.operation == Operation.MOVE_TO;
     }
 
     /**
      * Movement update tick - handles Y-axis movement for water/air entities
      */
-    public void onUpdateMoveHelper() {
-        this.entity.zza = 0F;
+    public void tick() {
+        mob.setZza(0.0F);
 
-        if (this.action == Action.MOVE_TO) {
-            this.action = Action.WAIT;
+        if (this.operation == Operation.MOVE_TO) {
+            this.operation = Operation.WAIT;
 
-            double x1 = this.posX - this.entity.getX();
-            double y1 = this.posY - this.entity.getY();
-            double z1 = this.posZ - this.entity.getZ();
+            double x1 = this.wantedX - this.entity.getX();
+            double y1 = this.wantedY - this.entity.getY();
+            double z1 = this.wantedZ - this.entity.getZ();
             double moveSq = x1 * x1 + y1 * y1 + z1 * z1;
 
             if (moveSq > 0.001D) {
@@ -99,13 +80,13 @@ public class ShipMoveHelper {
                     }
                 }
 
-                moveSpeed *= (float) this.speed;
+                moveSpeed *= this.speedModifier;
 
                 // limit turn rate per tick
                 this.entity.setYRot(this.limitAngle(this.entity.getYRot(), f, this.rotateLimit));
                 // [PORT] 1.10.2 -> 1.20.1: restore legacy forward input while MOVE_TO.
                 // In 1.20.1 setSpeed() does not implicitly set forward movement.
-                this.entity.zza = 1.0F;
+                mob.setZza(1.0F);
 
                 // Y-axis movement (not handled by vanilla which only does horizontal)
                 if (entityN.canFly()) {
@@ -143,10 +124,10 @@ public class ShipMoveHelper {
 
                 this.entity.setSpeed(moveSpeed);
             } else {
-                this.entity.zza = 0F;
+                mob.setZza(0.0F);
             }
         } else {
-            this.entity.zza = 0F;
+            mob.setZza(0.0F);
         }
     }
 

@@ -283,7 +283,7 @@ public class C2SInputPacket {
             if (TargetHelper.checkSameOwner(player, ship)) {
                 ship.setEntitySit(false);
                 ship.startRiding(player, true);
-                ship.getShipNavigate().stop();
+                ship.getNavigation().stop();
                 ship.sendSyncPacketRiders();
             }
         }

@@ -1,12 +1,11 @@
 package com.lulan.shincolle.entity;
 
-import com.lulan.shincolle.ai.path.ShipMoveHelper;
-import com.lulan.shincolle.ai.path.ShipPathNavigate;
+import com.lulan.shincolle.ai.path.ShipMoveControl;
+import com.lulan.shincolle.ai.path.ShipNavigation;
 import com.lulan.shincolle.network.ModNetworking;
 import com.lulan.shincolle.network.S2CEntitySyncPacket;
 import com.lulan.shincolle.reference.unitclass.Attrs;
 import com.lulan.shincolle.utility.EntityHelper;
-
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
@@ -14,19 +13,17 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.level.Level;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * Base class for summoned entities (rensouhou, floating fort, airplanes, etc.).
  * Manages lifetime, host tracking, and ammo resource return.
  * Ported from 1.10.2 BasicEntitySummon.
  */
-public abstract class BasicEntitySummon extends Mob implements IShipOwner {
+public abstract class BasicEntitySummon extends Mob implements IShipOwner, IShipNavigator {
 
     protected IShipAttackBase host;
-    protected Entity atkTarget;
     protected Attrs shipAttrs;
-    protected ShipPathNavigate shipNavigator;
-    protected ShipMoveHelper shipMoveHelper;
     protected int numAmmoLight;
     protected int numAmmoHeavy;
     protected int scaleLevel;
@@ -51,16 +48,20 @@ public abstract class BasicEntitySummon extends Mob implements IShipOwner {
                 .add(Attributes.ATTACK_DAMAGE, 1.0D);
     }
 
+    @Override
+    protected @NotNull ShipNavigation createNavigation(@NotNull Level level) {
+        return new ShipNavigation(this, level);
+    }
+
     // ========== Static Attributes ==========
 
     /**
      * Called at end of subclass constructor
      */
     protected void postInit() {
-        this.shipNavigator = new ShipPathNavigate(this);
         // [PORT] 1.10.2 -> 1.20.1: restore legacy summon turn-rate cap for ship-type
         // summons.
-        this.shipMoveHelper = new ShipMoveHelper(this, 60F);
+        this.moveControl = new ShipMoveControl(this, 60F, 1.5F);
     }
 
     // ========== Abstract Methods ==========
@@ -138,12 +139,18 @@ public abstract class BasicEntitySummon extends Mob implements IShipOwner {
             }
 
             // target validity check - if can't find more targets, die
+            LivingEntity target = this.getTarget();
+
             if (!shouldDie && !canFindTarget()
-                    && (this.atkTarget == null || !this.atkTarget.isAlive())) {
+                    && (target == null || !target.isAlive())) {
                 // try host's target
-                if (this.host != null && this.host.getEntityTarget() != null
-                        && this.host.getEntityTarget().isAlive()) {
-                    this.atkTarget = this.host.getEntityTarget();
+                if (this.host != null && target != null
+                        && target.isAlive()) {
+                    Entity host_target = this.host.getEntityTarget();
+
+                    if (host_target instanceof LivingEntity living) {
+                        this.setTarget(living);
+                    }
                 } else {
                     shouldDie = true;
                 }
@@ -205,23 +212,19 @@ public abstract class BasicEntitySummon extends Mob implements IShipOwner {
     }
 
     public Entity getEntityTarget() {
-        return this.atkTarget;
+        return this.getTarget();
     }
 
     public void setEntityTarget(Entity target) {
-        this.atkTarget = target;
+        this.setTarget((LivingEntity) target);
     }
 
     public Attrs getAttrs() {
         return this.shipAttrs;
     }
 
-    public ShipPathNavigate getShipNavigate() {
-        return this.shipNavigator;
-    }
-
-    public ShipMoveHelper getShipMoveHelper() {
-        return this.shipMoveHelper;
+    public ShipMoveControl getShipMoveControl() {
+        return (ShipMoveControl) this.moveControl;
     }
 
     public int getScaleLevel() {
@@ -283,7 +286,6 @@ public abstract class BasicEntitySummon extends Mob implements IShipOwner {
 
     protected void clearAITargetTasks() {
         this.setTarget(null);
-        this.atkTarget = null;
         this.targetSelector.removeAllGoals(goal -> true);
     }
 }

@@ -732,7 +732,7 @@ public class BuffHelper {
         else if (source.getDirectEntity() instanceof AreaEffectCloud) {
             // area effect clouds don't easily expose their potion effects in 1.20.1
             // use level 1 as default (matches most common case)
-            
+
         }
         // not a potion source
         else {

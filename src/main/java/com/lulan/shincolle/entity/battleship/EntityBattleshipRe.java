@@ -11,6 +11,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 
+import java.util.Arrays;
 import java.util.UUID;
 
 /**
@@ -62,7 +63,8 @@ public class EntityBattleshipRe extends BasicEntityShipCV {
     @Override
     public void aiStep() {
         super.aiStep();
-
+        System.out.println(Arrays.toString(this.goalSelector.getRunningGoals().toArray()));
+        System.out.println(this.shipAttrs.getMoveSpeed());
         if (!this.level().isClientSide()) {
             if (this.tickCount % 128 == 0) {
                 // marriage ring aura: damage resistance to owner only
@@ -92,4 +94,5 @@ public class EntityBattleshipRe extends BasicEntityShipCV {
             return this.getBbHeight() * 0.55D;
         }
     }
+
 }

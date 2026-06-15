@@ -20,7 +20,7 @@ public class ShinColleDataGenerators {
         generator.addProvider(event.includeClient(), new ShinColleItemModelProvider(packOutput,
                 existingFileHelper));
 
-        generator.addProvider(event.includeClient(), new ShinColleGlobalLootModifierProvider(packOutput));
+        generator.addProvider(event.includeServer(), new ShinColleGlobalLootModifierProvider(packOutput));
     }
 
 }

@@ -73,7 +73,7 @@ public class Values {
                     put((int) ID.ShipClass.BBTA,
                             new float[]{84F, 19F, 0.23F, 1.2F, 0.42F, 10F, 0.65F, 0.55F, 0.24F, 0.7F, 0.84F, 0.5F});
                     put((int) ID.ShipClass.BBRE,
-                            new float[]{120F, 27F, 0.25F, 1.1F, 0.36F, 12F, 0.8F, 0.65F, 0.25F, 0.63F, 0.72F, 0.5F});
+                            new float[]{120F, 27F, 0.25F, 1.1F, 0.36F, 12F, 0.8F, 0.65F, 0.25F, 0.63F, 1.2F, 1F});
                     // transport
                     put((int) ID.ShipClass.APWA,
                             new float[]{90F, 3F, 0.10F, 1.0F, 0.3F, 8F, 0.7F, 0.25F, 0.16F, 0.35F, 0.6F, 0.3F});

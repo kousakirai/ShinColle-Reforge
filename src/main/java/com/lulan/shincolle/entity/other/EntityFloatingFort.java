@@ -51,7 +51,7 @@ public class EntityFloatingFort extends BasicEntityAirplane {
         }
 
         if (!this.level().isClientSide() && this.isAlive()) {
-            if (this.backHome || this.atkTarget == null || !this.atkTarget.isAlive() || this.tickCount >= 500) {
+            if (this.backHome || this.getTarget() == null || !this.getTarget().isAlive() || this.tickCount >= 500) {
                 impactExplosion();
                 return;
             }

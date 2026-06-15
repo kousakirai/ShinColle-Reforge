@@ -46,7 +46,7 @@ public class EntityRensouhou extends BasicEntitySummon {
 
             @Override
             public boolean canUse() {
-                Entity target = self.getEntityTarget();
+                LivingEntity target = self.getTarget();
                 return target != null && target.isAlive() && self.numAmmoLight > 0;
             }
 
@@ -79,7 +79,7 @@ public class EntityRensouhou extends BasicEntitySummon {
 
                 // re-acquire target from host if current target died
                 if (!target.isAlive() && self.host != null) {
-                    Entity newTarget = self.host.getEntityTarget();
+                    LivingEntity newTarget = self.getTarget();
                     if (newTarget != null && newTarget.isAlive()) {
                         self.setEntityTarget(newTarget);
                     }
@@ -103,7 +103,6 @@ public class EntityRensouhou extends BasicEntitySummon {
     @Override
     public void initAttrs(IShipAttackBase host, Entity target, int scaleLevel, float... par2) {
         this.host = host;
-        this.atkTarget = target;
         this.setScaleLevel(scaleLevel);
 
         if (host instanceof BasicEntityShip ship) {
@@ -147,5 +146,25 @@ public class EntityRensouhou extends BasicEntitySummon {
             return livingTarget.hurt(this.damageSources().mobAttack(this), atk);
         }
         return false;
+    }
+
+    @Override
+    public boolean canFly() {
+        return false;
+    }
+
+    @Override
+    public boolean isJumping() {
+        return false;
+    }
+
+    @Override
+    public float getMoveSpeed() {
+        return 0;
+    }
+
+    @Override
+    public float getJumpSpeed() {
+        return 0;
     }
 }

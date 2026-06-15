@@ -128,7 +128,7 @@ public class InteractHelper {
         CapaTeitoku capa = ServerDataManager.getTeitokuCapability(player);
 
         capa.setMarriageNum(capa.getMarriageNum() + 1);
-        
+
 
         // play hearts effect
         ModNetworking.sendToAllTracking(
@@ -173,7 +173,7 @@ public class InteractHelper {
                     ship.level().addFreshEntity(entityItem);
                 }
             }
-            
+
 
             // drop inventory item
             for (int i = 0; i < ship.getCapaShipInventory().getSlots(); i++) {

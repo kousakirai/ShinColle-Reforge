@@ -1,8 +1,7 @@
 package com.lulan.shincolle.entity;
 
 import com.lulan.shincolle.ai.ShipAircraftAttackGoal;
-import com.lulan.shincolle.ai.path.ShipMoveHelper;
-import com.lulan.shincolle.ai.path.ShipPathNavigate;
+import com.lulan.shincolle.ai.path.ShipMoveControl;
 import com.lulan.shincolle.reference.ID;
 import com.lulan.shincolle.reference.unitclass.Attrs;
 import com.lulan.shincolle.reference.unitclass.MissileData;
@@ -32,7 +31,7 @@ import java.util.Objects;
  * Ported from 1.10.2 BasicEntityAirplane.
  */
 public abstract class BasicEntityAirplane extends BasicEntitySummon
-        implements IShipCannonAttack, IShipFlyable {
+        implements IShipCannonAttack, IShipFlyable, IShipNavigator {
 
     protected boolean backHome;
     protected boolean canFindTargetFlag;
@@ -70,7 +69,7 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
         this.clearAITasks();
         this.clearAITargetTasks();
         this.goalSelector.addGoal(1, new ShipAircraftAttackGoal(this));
-        this.setEntityTarget(atkTarget);
+        this.setTarget(this.getTarget());
     }
 
     // ========== Target Finding ==========
@@ -154,19 +153,16 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
 
                     if (dist > 2F + hostEnt.getBbHeight()) {
                         // fly toward host every 16 ticks
-                        if (this.tickCount % 16 == 0) {
-                            this.shipNavigator.tryMoveToXYZ(
-                                    hostEnt.getX(),
-                                    hostEnt.getY() + hostEnt.getBbHeight() + 1D,
-                                    hostEnt.getZ(), 1D);
-
-                            // host is too far away - just despawn
-                            if (this.shipNavigator.noPath()
-                                    && this.distanceToSqr(hostEnt) >= 4095F) {
-                                this.returnSummonResource();
-                                this.discard();
-                                return;
-                            }
+                        this.getNavigation().moveTo(
+                                hostEnt.getX(),
+                                hostEnt.getY() + hostEnt.getBbHeight() + 1D,
+                                hostEnt.getZ(), 1D);
+                        // host is too far away - just despawn
+                        if (this.getNavigation().isDone()
+                                && this.distanceToSqr(hostEnt) >= 4095F) {
+                            this.returnSummonResource();
+                            this.discard();
+                            return;
                         }
                     } else {
                         // reached home - return resources and despawn
@@ -177,9 +173,9 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
                 }
 
                 // initial straight-line movement toward target
-                if (this.tickCount < 34 && this.atkTarget != null) {
-                    double distX = this.atkTarget.getX() - this.getX();
-                    double distZ = this.atkTarget.getZ() - this.getZ();
+                if (this.tickCount < 34 && this.getTarget() != null) {
+                    double distX = this.getTarget().getX() - this.getX();
+                    double distZ = this.getTarget().getZ() - this.getZ();
                     double distSqrt = Math.sqrt(distX * distX + distZ * distZ);
 
                     if (distSqrt > 0.01D) {
@@ -195,7 +191,7 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
                     boolean findNewTarget = false;
 
                     if (this.tickCount < 1200) {
-                        if (this.atkTarget == null || !this.atkTarget.isAlive()) {
+                        if (this.getTarget() == null || !this.getTarget().isAlive()) {
                             findNewTarget = true;
                         }
                     }
@@ -204,7 +200,7 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
                         Entity newTarget = findNearbyTarget();
 
                         if (newTarget == null && this.host != null) {
-                            newTarget = this.host.getEntityTarget();
+                            newTarget = this.getTarget();
                         }
 
                         if (newTarget != null) {
@@ -232,18 +228,16 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
         }
 
         // facing calculation (both sides, every 2 ticks)
-        if (this.tickCount % 2 == 0) {
-            Vec3 motion = this.getDeltaMovement();
-            double dx = motion.x;
-            double dy = motion.y;
-            double dz = motion.z;
-            double xzDist = Math.sqrt(dx * dx + dz * dz);
+        Vec3 motion = this.getDeltaMovement();
+        double dx = motion.x;
+        double dy = motion.y;
+        double dz = motion.z;
+        double xzDist = Math.sqrt(dx * dx + dz * dz);
 
-            if (xzDist > 0.01D) {
-                float yaw = (float) (Mth.atan2(dz, dx) * (180D / Math.PI)) - 90F;
-                this.setYRot(yaw);
-                this.setXRot((float) -(Mth.atan2(dy, xzDist) * (180D / Math.PI)));
-            }
+        if (xzDist > 0.01D) {
+            float yaw = (float) (Mth.atan2(dz, dx) * (180D / Math.PI)) - 90F;
+            this.setYRot(yaw);
+            this.setXRot((float) -(Mth.atan2(dy, xzDist) * (180D / Math.PI)));
         }
 
         super.tick();
@@ -443,7 +437,7 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
      */
     protected void initAttrsFromHost(BasicEntityShip ship, Entity target, int scaleLevel, float launchY) {
         this.host = ship;
-        this.atkTarget = target;
+        this.setTarget((LivingEntity) target);
         this.setScaleLevel(scaleLevel);
 
         // set spawn position
@@ -474,8 +468,8 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
         applyInitAttrs();
 
         // setup navigator and AI
-        this.shipNavigator = new ShipPathNavigate(this);
-        this.shipMoveHelper = new ShipMoveHelper(this, 36F);
+        this.navigation = this.createNavigation(this.level());
+        this.moveControl = new ShipMoveControl(this, 60F, 1.5F);
         this.setAIList();
     }
 
@@ -484,7 +478,7 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
      */
     protected void initAttrsFromHostile(BasicEntityShipHostile hostile, Entity target, int scaleLevel, float launchY) {
         this.host = hostile;
-        this.atkTarget = target;
+        this.setTarget((LivingEntity) target);
         this.setScaleLevel(scaleLevel);
 
         this.setPos(hostile.getX(), launchY, hostile.getZ());
@@ -512,8 +506,8 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
 
         applyInitAttrs();
 
-        this.shipNavigator = new ShipPathNavigate(this);
-        this.shipMoveHelper = new ShipMoveHelper(this, 36F);
+        this.navigation = this.createNavigation(this.level());
+        this.moveControl = new ShipMoveControl(this, 36F, 1.5F);
         this.setAIList();
     }
 

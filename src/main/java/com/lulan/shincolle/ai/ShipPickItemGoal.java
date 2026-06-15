@@ -37,7 +37,15 @@ public class ShipPickItemGoal extends Goal {
 
     @Override
     public boolean canUse() {
+        AABB box = this.ship.getBoundingBox().inflate(this.pickRange, this.pickRange * 0.5F + 1.0F, this.pickRange * 1.2F);
+        List<ItemEntity> items = this.ship.level().getEntitiesOfClass(ItemEntity.class, box);
+
+        if (items.isEmpty()) {
+            return false;
+        }
+
         // sitting, riding, disabled, no fuel, crane state active: skip
+        // check Flag PickItem
         if (this.ship.isPassenger() || this.ship.isOrderedToSit() ||
                 !this.ship.getStateFlag(ID.F.PickItem) ||
                 this.ship.getStateMinor(ID.M.CraneState) > 0 ||
@@ -59,14 +67,14 @@ public class ShipPickItemGoal extends Goal {
         this.pickDelay--;
 
         // check every 16 ticks
-        if (this.ship.tickCount % 16 == 0) {
+        if (this.ship.tickCount % 15 == 0) {
             updateShipParms();
 
             // find nearby items
             this.entItem = getNearbyItemEntity();
 
             if (this.entItem != null && this.entItem.isAlive()) {
-                this.ship.getShipNavigate().tryMoveToEntityLiving(this.entItem, 1.0D);
+                ship.getNavigation().moveTo(this.entItem, 1.0D);
             }
         }
 
@@ -102,7 +110,7 @@ public class ShipPickItemGoal extends Goal {
                     }
                 }
 
-                this.ship.getShipNavigate().clearPathEntity();
+                ship.getNavigation().stop();
             }
         }
     }

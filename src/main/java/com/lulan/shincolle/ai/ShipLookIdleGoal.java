@@ -11,6 +11,7 @@ import java.util.EnumSet;
  * Look at idle random direction goal.
  * Ported from EntityAIShipLookIdle (setMutexBits: 0)
  */
+@Deprecated
 public class ShipLookIdleGoal extends Goal {
 
     private final Mob entity;

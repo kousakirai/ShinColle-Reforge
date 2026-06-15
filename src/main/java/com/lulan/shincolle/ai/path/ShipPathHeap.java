@@ -4,6 +4,7 @@ package com.lulan.shincolle.ai.path;
  * Min-heap for A* pathfinding, ordered by distanceToTarget.
  * Ported from 1.10.2 ShipPathHeap.
  */
+@Deprecated(forRemoval = true)
 public class ShipPathHeap {
 
     private ShipPathPoint[] pathPoints = new ShipPathPoint[128];

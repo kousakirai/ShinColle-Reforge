@@ -21,6 +21,7 @@ import javax.annotation.Nullable;
  * <p>
  * Ported from 1.10.2 ShipPathNavigate (standalone, not extending vanilla).
  */
+@Deprecated
 public class ShipPathNavigate {
 
     private final Mob host;
@@ -179,7 +180,7 @@ public class ShipPathNavigate {
                                 : state.getShape(this.world, blockPos).bounds();
                         vec3 = vec3.subtract(0.0D, 1.0D - blockAABB.maxY, 0.0D);
 
-                        this.hostShip.getShipMoveHelper().setMoveTo(
+                        this.hostShip.getShipMoveControl().setWantedPosition(
                                 vec3.x, vec3.y + 0.1D, vec3.z, this.speed);
                     }
                 }

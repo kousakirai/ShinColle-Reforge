@@ -1,6 +1,5 @@
 package com.lulan.shincolle.ai;
 
-import com.lulan.shincolle.ai.path.ShipPathNavigate;
 import com.lulan.shincolle.entity.IShipAttackBase;
 import com.lulan.shincolle.handler.ConfigHandler;
 import com.lulan.shincolle.reference.ID;
@@ -14,6 +13,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.TamableAnimal;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.ai.navigation.PathNavigation;
 
 import java.util.EnumSet;
 
@@ -31,7 +31,7 @@ public class ShipFollowOwnerGoal extends Goal {
 
     private final IShipAttackBase host;
     private final Mob hostEntity;
-    private final ShipPathNavigate shipNavigator;
+    private final PathNavigation shipNavigator;
     private final double[] ownerPosOld; // last recorded owner position
     private LivingEntity owner;
     private int checkTP_T, checkTP_D; // teleport cooldown counters
@@ -44,7 +44,7 @@ public class ShipFollowOwnerGoal extends Goal {
     public ShipFollowOwnerGoal(IShipAttackBase entity) {
         this.host = entity;
         this.hostEntity = (Mob) entity;
-        this.shipNavigator = entity.getShipNavigate();
+        this.shipNavigator = this.hostEntity.getNavigation();
         this.distSq = 1D;
         this.setFlags(EnumSet.of(Goal.Flag.MOVE, Goal.Flag.LOOK, Goal.Flag.JUMP));
 
@@ -88,6 +88,7 @@ public class ShipFollowOwnerGoal extends Goal {
 
     @Override
     public boolean canContinueToUse() {
+        updateDistance();
         ProfilerFiller profiler = DebugProfiler.push(this.hostEntity.level(), "shincolle.ai.follow_owner.continue");
         try {
             if (host == null || owner == null) {
@@ -106,7 +107,7 @@ public class ShipFollowOwnerGoal extends Goal {
                 return true;
             }
 
-            boolean cont = !shipNavigator.noPath() || canUse();
+            boolean cont = !shipNavigator.isDone() || canUse();
             if (!cont) {
                 DebugProfiler.count(profiler, "shincolle.ai.follow_owner.continue.finished");
             }
@@ -126,9 +127,7 @@ public class ShipFollowOwnerGoal extends Goal {
     @Override
     public void stop() {
         this.owner = null;
-        if (this.shipNavigator != null) {
-            this.shipNavigator.clearPathEntity();
-        }
+        this.shipNavigator.stop();
     }
 
     @Override
@@ -158,14 +157,14 @@ public class ShipFollowOwnerGoal extends Goal {
 
             // reached min distance, stop
             if (this.distSq <= this.minDistSq) {
-                this.shipNavigator.clearPathEntity();
+                this.shipNavigator.stop();
             }
 
             // pathfind every cooldown cycle
             if (this.findCooldown <= 0) {
                 this.findCooldown = 32;
                 DebugProfiler.count(profiler, "shincolle.ai.follow_owner.tick.path_request");
-                this.shipNavigator.tryMoveToXYZ(pos[0], pos[1], pos[2], 1D);
+                this.shipNavigator.moveTo(pos[0], pos[1], pos[2], 1D);
             }
 
             // look toward owner
@@ -251,7 +250,7 @@ public class ShipFollowOwnerGoal extends Goal {
             }
 
             if (host.getStateFlag(ID.F.PickItem))
-                this.maxDistSq = 64D;
+                this.maxDistSq = 16D;
         }
         // no formation
         else {
@@ -274,6 +273,7 @@ public class ShipFollowOwnerGoal extends Goal {
         double distY = pos[1] - this.hostEntity.getY();
         double distZ = pos[2] - this.hostEntity.getZ();
         this.distSq = distX * distX + distY * distY + distZ * distZ;
+
     }
 
     /**

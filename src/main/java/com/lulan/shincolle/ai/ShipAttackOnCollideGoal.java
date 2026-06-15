@@ -3,7 +3,7 @@ package com.lulan.shincolle.ai;
 import com.lulan.shincolle.entity.IShipAttackBase;
 import com.lulan.shincolle.utility.CombatHelper;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.goal.Goal;
 
@@ -22,7 +22,7 @@ public class ShipAttackOnCollideGoal extends Goal {
     private final IShipAttackBase host;
     private final Mob entity;
     private final double speed;
-    private Entity target;
+    private LivingEntity target;
     private int delayAttack;
     private int delayMax;
 
@@ -41,8 +41,9 @@ public class ShipAttackOnCollideGoal extends Goal {
         if (this.entity.isPassenger() || this.host.getIsSitting())
             return false;
 
-        this.target = this.host.getEntityTarget();
+        this.target = this.entity.getTarget();
         return this.target != null && this.target.isAlive();
+
     }
 
     @Override
@@ -53,7 +54,7 @@ public class ShipAttackOnCollideGoal extends Goal {
     @Override
     public boolean canContinueToUse() {
         if (this.host == null) return false;
-        if (this.target != null && this.target.isAlive() && !this.host.getShipNavigate().noPath()) {
+        if (this.target != null && this.target.isAlive() && !this.entity.getNavigation().isDone()) {
             return true;
         }
         return this.canUse();
@@ -62,12 +63,12 @@ public class ShipAttackOnCollideGoal extends Goal {
     @Override
     public void stop() {
         this.target = null;
-        this.host.getShipNavigate().clearPathEntity();
+        this.entity.getNavigation().stop();
     }
 
     @Override
     public void tick() {
-        if (this.entity == null || this.target == null || !this.target.isAlive()) {
+        if (this.target == null || !this.target.isAlive()) {
             this.stop();
             return;
         }
@@ -88,9 +89,9 @@ public class ShipAttackOnCollideGoal extends Goal {
 
             // only pathfind when out of melee range; clear path when in range
             if (distTarget > distAttack) {
-                this.host.getShipNavigate().tryMoveToEntityLiving(this.target, this.speed);
+                this.entity.getNavigation().moveTo(this.target, this.speed);
             } else {
-                this.host.getShipNavigate().clearPathEntity();
+                this.entity.getNavigation().stop();
             }
         }
 

@@ -112,7 +112,7 @@ public class CombatRation extends BasicItem implements IShipCombatRation {
                             && TeamHelper.checkSameOwner(player, s)) {
                         if (player.distanceToSqr(s) > 4D) {
                             s.setStateEmotion(ID.S.Emotion, ID.Emotion.XD, true);
-                            s.getShipNavigate().tryMoveToEntityLiving(player, 0.75D);
+                            s.getNavigation().moveTo(player, 0.75D);
 
                             if (player.getRandom().nextInt(5) == 0) {
                                 switch (player.getRandom().nextInt(3)) {

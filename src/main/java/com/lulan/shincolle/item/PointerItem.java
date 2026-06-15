@@ -309,7 +309,7 @@ public class PointerItem extends BasicItem {
                         new int[]{player.getId(), 0, mode}));
             }
             return true;
-            }
+        }
 
 
         // Sprint in formation mode: queue formation change

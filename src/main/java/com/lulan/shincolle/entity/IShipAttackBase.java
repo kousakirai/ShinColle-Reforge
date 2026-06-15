@@ -6,8 +6,10 @@ import net.minecraft.world.entity.Entity;
 import java.util.HashMap;
 
 public interface IShipAttackBase extends IShipNavigator, IShipEmotion, IShipOwner, IShipAttrs {
+    @Deprecated(forRemoval = true)
     Entity getEntityTarget();
 
+    @Deprecated(forRemoval = true)
     void setEntityTarget(Entity target);
 
     Entity getEntityRevengeTarget();

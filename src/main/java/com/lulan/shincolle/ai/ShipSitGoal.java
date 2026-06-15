@@ -32,9 +32,6 @@ public class ShipSitGoal extends Goal {
     @Override
     public void tick() {
         this.ship.getNavigation().stop();
-        if (this.ship.getShipNavigate() != null) {
-            this.ship.getShipNavigate().stop();
-        }
         this.ship.setTarget(null);
         this.ship.setEntityTarget(null);
     }

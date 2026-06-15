@@ -12,6 +12,7 @@ import java.util.EnumSet;
  * Watch closest entity goal.
  * Ported from EntityAIShipWatchClosest (setMutexBits: 0)
  */
+@Deprecated
 public class ShipWatchClosestGoal extends Goal {
 
     private final Mob entity;

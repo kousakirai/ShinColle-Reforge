@@ -16,6 +16,7 @@ import com.lulan.shincolle.server.ServerDataManager;
 import com.lulan.shincolle.tileentity.TileEntityWaypoint;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.core.NonNullList;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -25,6 +26,7 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.LivingEntity;
@@ -140,7 +142,7 @@ public class TaskHelper {
 
         // check distance
         if (host.distanceToSqr(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5) > 25D) {
-            host.getShipNavigate().tryMoveToXYZ(host.getGuardedPos(0), host.getGuardedPos(1),
+            host.getNavigation().moveTo(host.getGuardedPos(0), host.getGuardedPos(1),
                     host.getGuardedPos(2), 1D);
             return;
         }
@@ -189,7 +191,7 @@ public class TaskHelper {
             maxtimes--;
             if (maxtimes < 0)
                 break;
-            
+
 
             // move materials from chest to ship's inventory slot 12~20
             for (int i = 0; i < 9; i++) {
@@ -242,7 +244,7 @@ public class TaskHelper {
                 }
 
                 // move remaining items (bucket, bottle...)
-                net.minecraft.core.NonNullList<ItemStack> remainStacks = resultOpt.get()
+                NonNullList<ItemStack> remainStacks = resultOpt.get()
                         .getRemainingItems(recipeTemp);
                 for (ItemStack remain : remainStacks) {
                     if (!remain.isEmpty()) {
@@ -263,7 +265,7 @@ public class TaskHelper {
             host.decrGrudgeNum(ConfigHandler.consumeGrudgeTask[3]);
             host.addMorale(-10);
 
-            host.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
+            host.swing(InteractionHand.MAIN_HAND);
 
             if (host.getRandom().nextInt(5) == 0) {
                 switch (host.getRandom().nextInt(5)) {
@@ -307,7 +309,7 @@ public class TaskHelper {
         } else {
             // random move
             if ((host.getTickExisted() & 63) == 0) {
-                host.getShipNavigate().tryMoveToXYZ(
+                host.getNavigation().moveTo(
                         host.getX() + host.getRandom().nextInt(9) - 4,
                         host.getY() + host.getRandom().nextInt(5) - 2,
                         host.getZ() + host.getRandom().nextInt(9) - 4, 1D);
@@ -426,7 +428,7 @@ public class TaskHelper {
 
         // move to guard point
         if (host.distanceToSqr(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5) > 10D) {
-            host.getShipNavigate().tryMoveToXYZ(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, 1D);
+            host.getNavigation().moveTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, 1D);
             return;
         }
 
@@ -442,7 +444,7 @@ public class TaskHelper {
 
         // if no hook -> cast fishing rod
         if (host.fishHook == null) {
-            host.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
+            host.swing(InteractionHand.MAIN_HAND);
 
             EntityShipFishingHook hook = new EntityShipFishingHook(ModEntities.FISHING_HOOK.get(), host.level());
             hook.setHost(host);
@@ -498,7 +500,7 @@ public class TaskHelper {
                     break;
             }
 
-            host.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
+            host.swing(InteractionHand.MAIN_HAND);
         }
 
         // fishing timeout
@@ -551,7 +553,7 @@ public class TaskHelper {
 
         // check distance
         if (host.distanceToSqr(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5) > 25D) {
-            host.getShipNavigate().tryMoveToXYZ(host.getGuardedPos(0), host.getGuardedPos(1),
+            host.getNavigation().moveTo(host.getGuardedPos(0), host.getGuardedPos(1),
                     host.getGuardedPos(2), 1D);
             return;
         }

@@ -48,5 +48,6 @@ public class ShipRevengeTargetGoal extends Goal {
 
     @Override
     public void stop() {
+        super.stop();
     }
 }

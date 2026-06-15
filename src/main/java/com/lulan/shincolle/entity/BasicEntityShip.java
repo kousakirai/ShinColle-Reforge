@@ -1,8 +1,8 @@
 package com.lulan.shincolle.entity;
 
 import com.lulan.shincolle.ai.*;
-import com.lulan.shincolle.ai.path.ShipMoveHelper;
-import com.lulan.shincolle.ai.path.ShipPathNavigate;
+import com.lulan.shincolle.ai.path.ShipMoveControl;
+import com.lulan.shincolle.ai.path.ShipNavigation;
 import com.lulan.shincolle.capability.CapaShipInventory;
 import com.lulan.shincolle.capability.CapaShipSavedValues;
 import com.lulan.shincolle.capability.CapaTeitoku;
@@ -11,6 +11,7 @@ import com.lulan.shincolle.client.gui.inventory.ContainerShipInventory;
 import com.lulan.shincolle.crafting.EquipCalc;
 import com.lulan.shincolle.entity.other.BasicEntityItem;
 import com.lulan.shincolle.entity.other.EntityAbyssMissile;
+import com.lulan.shincolle.entity.other.EntityShipFishingHook;
 import com.lulan.shincolle.handler.ConfigHandler;
 import com.lulan.shincolle.init.ModBlocks;
 import com.lulan.shincolle.init.ModEntities;
@@ -29,6 +30,7 @@ import com.lulan.shincolle.reference.unitclass.MissileData;
 import com.lulan.shincolle.server.ServerDataManager;
 import com.lulan.shincolle.utility.*;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -41,11 +43,15 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
+import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
+import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -53,6 +59,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.common.world.ForgeChunkManager;
+import net.minecraftforge.network.NetworkHooks;
+import org.jetbrains.annotations.NotNull;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -62,7 +71,7 @@ import java.util.Objects;
 /**
  * SHIP DATA
  * Core abstract class for all friendly ship entities.
- * Ported from 1.10.2 EntityTameable to 1.20.1 TamableAnimal.
+ * Ported from 1.10.2 EntityTameable to 1.20.1 TamableAnimal.`
  */
 public abstract class BasicEntityShip extends TamableAnimal
         implements IShipCannonAttack, IShipGuardian, IShipFloating, IShipNavigator, IShipCustomTexture, MenuProvider {
@@ -80,10 +89,8 @@ public abstract class BasicEntityShip extends TamableAnimal
      */
     public ArrayList<String> unitNames;
     // fishing hook
-    public com.lulan.shincolle.entity.other.EntityShipFishingHook fishHook;
+    public EntityShipFishingHook fishHook;
     protected CapaShipInventory itemHandler;
-    protected ShipPathNavigate shipNavigator;
-    protected ShipMoveHelper shipMoveHelper;
     protected LivingEntity aiTarget;
     protected Entity guardedEntity;
     protected Entity atkTarget;
@@ -152,9 +159,6 @@ public abstract class BasicEntityShip extends TamableAnimal
     private boolean initAI, initWaitAI;
     private boolean isUpdated;
     private int updateTime = 16;
-
-    // ========== Constructor ==========
-
     protected BasicEntityShip(EntityType<? extends BasicEntityShip> type, Level level) {
         super(type, level);
         this.noCulling = true;
@@ -201,6 +205,7 @@ public abstract class BasicEntityShip extends TamableAnimal
         this.ShipPrevY = getY();
         this.ShipPrevZ = getZ();
         this.setMaxUpStep(1.0F);
+        this.moveControl = new ShipMoveControl(this, 60F, 1.5F);
 
         // render
         this.rotateAngle = new float[3];
@@ -214,15 +219,24 @@ public abstract class BasicEntityShip extends TamableAnimal
         this.isUpdated = false;
     }
 
+    // ========== Constructor ==========
+
     public static AttributeSupplier.Builder createShipAttributes() {
         return TamableAnimal.createMobAttributes()
                 .add(Attributes.MAX_HEALTH, 4.0D)
-                .add(Attributes.MOVEMENT_SPEED, 0.3D)
+                .add(Attributes.MOVEMENT_SPEED, 1.0D)
                 .add(Attributes.FOLLOW_RANGE, 64.0D)
                 .add(Attributes.KNOCKBACK_RESISTANCE, 0.0D)
                 .add(Attributes.ARMOR, 0.0D)
                 .add(Attributes.ARMOR_TOUGHNESS, 0.0D)
-                .add(Attributes.ATTACK_DAMAGE, 1.0D);
+                .add(Attributes.ATTACK_DAMAGE, 1.0D)
+                .add(Attributes.FOLLOW_RANGE, 64.0D);
+    }
+
+    @Override
+    protected @NotNull PathNavigation createNavigation(@NotNull Level level) {
+        System.out.println("ShipNavigation created");
+        return new ShipNavigation(this, level);
     }
 
     // ========== Static Attribute Builder (1.20.1) ==========
@@ -231,9 +245,8 @@ public abstract class BasicEntityShip extends TamableAnimal
      * init values, called at the end of subclass constructor
      */
     protected void postInit() {
-        this.shipNavigator = new ShipPathNavigate(this);
+        this.createNavigation(this.level());
         // [PORT] 1.10.2 -> 1.20.1: restore legacy ship turn-rate cap (60 deg/tick).
-        this.shipMoveHelper = new ShipMoveHelper(this, 60F);
         this.shipAttrs = new AttrsAdv(this.getShipClass());
     }
 
@@ -352,7 +365,7 @@ public abstract class BasicEntityShip extends TamableAnimal
             EntityHelper.moveEntityInFluid(this, travelVec);
             // Apply position change from deltaMovement; don't call super.travel()
             // to avoid vanilla water buoyancy stacking with custom fluid motion
-            this.move(net.minecraft.world.entity.MoverType.SELF, this.getDeltaMovement());
+            this.move(MoverType.SELF, this.getDeltaMovement());
         } else {
             super.travel(travelVec);
         }
@@ -373,7 +386,7 @@ public abstract class BasicEntityShip extends TamableAnimal
     // ========== Name Tag ==========
 
     @Override
-    public void setCustomName(@Nullable net.minecraft.network.chat.Component name) {
+    public void setCustomName(@Nullable Component name) {
         // Allow programmatic name setting (from NBT load, spawn egg, commands, etc.)
         // Vanilla name tag usage is blocked in mobInteract instead
         super.setCustomName(name);
@@ -399,8 +412,22 @@ public abstract class BasicEntityShip extends TamableAnimal
         // idle AI
         this.goalSelector.addGoal(23, new ShipFloatingGoal(this));
         this.goalSelector.addGoal(24, new ShipWanderGoal(this, 10, 5, 0.8D));
-        this.goalSelector.addGoal(25, new ShipWatchClosestGoal(this, Player.class, 4.0F, 0.06F));
-        this.goalSelector.addGoal(26, new ShipLookIdleGoal(this));
+        // Replace ShipWatchClosestGoal -> LookAtPlayerGoal
+        this.goalSelector.addGoal(25, new LookAtPlayerGoal(this, Player.class, 4.0F, 0.06F) {
+            @Override
+            public boolean canUse() {
+                if (BasicEntityShip.this.getStateFlag(ID.F.NoFuel)) return false;
+                return super.canUse();
+            }
+        });
+        // Replace: ShipLookIdleGoal -> RandomLookAroundGoal
+        this.goalSelector.addGoal(26, new RandomLookAroundGoal(this) {
+            @Override
+            public boolean canUse() {
+                if (BasicEntityShip.this.getStateFlag(ID.F.NoFuel)) return false;
+                return super.canUse();
+            }
+        });
     }
 
     public void setAITargetList() {
@@ -469,14 +496,14 @@ public abstract class BasicEntityShip extends TamableAnimal
                 int hpState = this.getStateEmotion(ID.S.HPState);
                 if (hpState >= ID.HPState.MINOR) {
                     // MINOR (蟆冗ｴ): light smoke only, 1 particle
-                    this.level().addParticle(net.minecraft.core.particles.ParticleTypes.SMOKE,
+                    this.level().addParticle(ParticleTypes.SMOKE,
                             this.getX() + (this.random.nextDouble() - 0.5) * this.getBbWidth(),
                             this.getY() + this.getBbHeight() * 0.5 + this.random.nextDouble() * 0.5,
                             this.getZ() + (this.random.nextDouble() - 0.5) * this.getBbWidth(),
                             0, 0.02, 0);
                     if (hpState >= ID.HPState.MODERATE) {
                         // MODERATE (荳ｭ遐ｴ): additional fire particle
-                        this.level().addParticle(net.minecraft.core.particles.ParticleTypes.FLAME,
+                        this.level().addParticle(ParticleTypes.FLAME,
                                 this.getX() + (this.random.nextDouble() - 0.5) * this.getBbWidth(),
                                 this.getY() + this.random.nextDouble() * this.getBbHeight() * 0.5,
                                 this.getZ() + (this.random.nextDouble() - 0.5) * this.getBbWidth(),
@@ -484,7 +511,7 @@ public abstract class BasicEntityShip extends TamableAnimal
                     }
                     if (hpState >= ID.HPState.HEAVY) {
                         // HEAVY (螟ｧ遐ｴ): heavy smoke + fire (isOnFire overlay handled separately)
-                        this.level().addParticle(net.minecraft.core.particles.ParticleTypes.LARGE_SMOKE,
+                        this.level().addParticle(ParticleTypes.LARGE_SMOKE,
                                 this.getX() + (this.random.nextDouble() - 0.5) * this.getBbWidth(),
                                 this.getY() + this.random.nextDouble() * this.getBbHeight(),
                                 this.getZ() + (this.random.nextDouble() - 0.5) * this.getBbWidth(),
@@ -1164,8 +1191,8 @@ public abstract class BasicEntityShip extends TamableAnimal
             return false;
         }
         // magic/dragonBreath: bypass all DEF/dodge/resist/light/repair goddess
-        else if (source.is(net.minecraft.world.damagesource.DamageTypes.MAGIC)
-                || source.is(net.minecraft.world.damagesource.DamageTypes.DRAGON_BREATH)) {
+        else if (source.is(DamageTypes.MAGIC)
+                || source.is(DamageTypes.DRAGON_BREATH)) {
             // ignore tiny magic damage (< 1% max HP)
             if (amount < this.getMaxHealth() * 0.01F)
                 return false;
@@ -1974,13 +2001,8 @@ public abstract class BasicEntityShip extends TamableAnimal
     // ========== IShipNavigator Implementation ==========
 
     @Override
-    public ShipPathNavigate getShipNavigate() {
-        return this.shipNavigator;
-    }
-
-    @Override
-    public ShipMoveHelper getShipMoveHelper() {
-        return this.shipMoveHelper;
+    public ShipMoveControl getShipMoveControl() {
+        return (ShipMoveControl) this.moveControl;
     }
 
     @Override
@@ -2200,8 +2222,6 @@ public abstract class BasicEntityShip extends TamableAnimal
         this.setInSittingPose(sit);
         if (sit) {
             this.jumping = false;
-            if (this.shipNavigator != null)
-                this.shipNavigator.stop();
             this.getNavigation().stop();
             this.setTarget(null);
             this.setEntityTarget(null);
@@ -2318,12 +2338,12 @@ public abstract class BasicEntityShip extends TamableAnimal
 
     @Override
     public Entity getEntityTarget() {
-        return this.atkTarget;
+        return this.getTarget();
     }
 
     @Override
     public void setEntityTarget(Entity target) {
-        this.atkTarget = target;
+        this.setTarget((LivingEntity) target);
     }
 
     @Override
@@ -2877,7 +2897,7 @@ public abstract class BasicEntityShip extends TamableAnimal
      * Open this ship's GUI for a server player.
      */
     public void openGUI(ServerPlayer player) {
-        net.minecraftforge.network.NetworkHooks.openScreen(player, this,
+        NetworkHooks.openScreen(player, this,
                 buf -> buf.writeInt(this.getId()));
     }
 
@@ -3005,7 +3025,7 @@ public abstract class BasicEntityShip extends TamableAnimal
                 }
                 // use lead: clear path
                 else if (stack.getItem() == Items.LEAD) {
-                    this.getShipNavigate().stop();
+                    this.getNavigation().stop();
                     return InteractionResult.SUCCESS;
                 }
                 // feed
@@ -3152,7 +3172,7 @@ public abstract class BasicEntityShip extends TamableAnimal
                     double d2 = this.random.nextGaussian() * 0.02D;
                     double d0 = this.random.nextGaussian() * 0.02D;
                     double d1 = this.random.nextGaussian() * 0.02D;
-                    this.level().addParticle(net.minecraft.core.particles.ParticleTypes.EXPLOSION,
+                    this.level().addParticle(ParticleTypes.EXPLOSION,
                             this.getX() + (this.random.nextFloat() * this.getBbWidth() * 2.0F) - this.getBbWidth(),
                             this.getY() + (this.random.nextFloat() * this.getBbHeight()),
                             this.getZ() + (this.random.nextFloat() * this.getBbWidth() * 2.0F) - this.getBbWidth(),
@@ -3390,7 +3410,7 @@ public abstract class BasicEntityShip extends TamableAnimal
         if (!this.level().isClientSide() && this.level() instanceof ServerLevel serverLevel) {
             int chunkX = Mth.floor(this.getX()) >> 4;
             int chunkZ = Mth.floor(this.getZ()) >> 4;
-            net.minecraftforge.common.world.ForgeChunkManager.forceChunk(
+            ForgeChunkManager.forceChunk(
                     serverLevel, "shincolle", this.getUUID(), chunkX, chunkZ, false, true);
         }
     }
@@ -3416,7 +3436,7 @@ public abstract class BasicEntityShip extends TamableAnimal
         if (!this.level().isClientSide() && this.level() instanceof ServerLevel serverLevel) {
             int chunkX = Mth.floor(this.getX()) >> 4;
             int chunkZ = Mth.floor(this.getZ()) >> 4;
-            net.minecraftforge.common.world.ForgeChunkManager.forceChunk(
+            ForgeChunkManager.forceChunk(
                     serverLevel, "shincolle", this.getUUID(), chunkX, chunkZ, enable, true);
         }
     }
@@ -3432,7 +3452,7 @@ public abstract class BasicEntityShip extends TamableAnimal
 
             for (int dx = -radius; dx <= radius; dx++) {
                 for (int dz = -radius; dz <= radius; dz++) {
-                    net.minecraftforge.common.world.ForgeChunkManager.forceChunk(
+                    ForgeChunkManager.forceChunk(
                             serverLevel, "shincolle", this.getUUID(),
                             chunkX + dx, chunkZ + dz, true, true);
                 }

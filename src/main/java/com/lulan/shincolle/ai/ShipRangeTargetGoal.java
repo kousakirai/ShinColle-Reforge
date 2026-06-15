@@ -65,16 +65,9 @@ public class ShipRangeTargetGoal extends Goal {
                 DebugProfiler.count(profiler, "shincolle.ai.range_target.blocked.sit_or_crane");
                 return false;
             }
-
-            // check every 8 ticks
-            if (this.host.getTickExisted() % 8 != 0) {
-                DebugProfiler.count(profiler, "shincolle.ai.range_target.blocked.tick_gate");
-                return false;
-            }
-
             updateRange();
 
-            AABB searchBox = this.entity.getBoundingBox().inflate(this.range, this.range * 0.75D, this.range);
+            AABB searchBox = this.entity.getBoundingBox().inflate(this.range, this.range * 2D, this.range * 2D);
             List<LivingEntity> targets = null;
 
             // Priority-based target selection for friendly ships
@@ -107,6 +100,7 @@ public class ShipRangeTargetGoal extends Goal {
                 targets = this.entity.level().getEntitiesOfClass(LivingEntity.class, searchBox,
                         this::isValidTarget);
             }
+            System.out.println("Targets found = " + targets.size());
 
             if (!targets.isEmpty()) {
                 // sort by distance
@@ -164,7 +158,7 @@ public class ShipRangeTargetGoal extends Goal {
     @Override
     public void start() {
         if (this.host != null) {
-            this.host.setEntityTarget(this.targetEntity);
+            this.entity.setTarget((LivingEntity) this.targetEntity);
         }
     }
 
@@ -174,7 +168,7 @@ public class ShipRangeTargetGoal extends Goal {
 
     @Override
     public boolean canContinueToUse() {
-        Entity target = this.host.getEntityTarget();
+        Entity target = this.entity.getTarget();
 
         if (target == null || !target.isAlive()) {
             return false;

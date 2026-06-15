@@ -147,7 +147,7 @@ public class ShipFloatingGoal extends Goal {
         return !(ship.isPassenger()
                 || ship.isOrderedToSit()
                 || ship.getStateMinor(ID.M.CraneState) > 0
-                || !ship.getShipNavigate().noPath()
+                || !ship.getNavigation().isDone()
                 || isInGuardPosition(ship));
     }
 
@@ -160,14 +160,14 @@ public class ShipFloatingGoal extends Goal {
         if (hostEntity instanceof BasicEntityShip ship) {
             if (ship.isOrderedToSit()
                     || ship.getStateMinor(ID.M.CraneState) > 0
-                    || !ship.getShipNavigate().noPath()
+                    || !ship.getNavigation().isDone()
                     || isInGuardPosition(ship)) {
                 return false;
             }
         }
 
         // check mount's own navigator and guard
-        return mount.getShipNavigate().noPath() && !isInGuardPosition(mount);
+        return mount.getNavigation().isDone() && !isInGuardPosition(mount);
     }
 
     private void applyVerticalBoost(double amount) {

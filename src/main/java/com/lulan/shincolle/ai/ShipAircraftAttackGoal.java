@@ -3,7 +3,7 @@ package com.lulan.shincolle.ai;
 import com.lulan.shincolle.entity.BasicEntityAirplane;
 import com.lulan.shincolle.handler.ConfigHandler;
 import com.lulan.shincolle.utility.BlockHelper;
-import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 
 import java.util.EnumSet;
@@ -15,7 +15,7 @@ import java.util.EnumSet;
 public class ShipAircraftAttackGoal extends Goal {
 
     private final BasicEntityAirplane host;
-    private Entity target;
+    private LivingEntity target;
     private int atkDelay;
     private int maxDelay;
     private float attackRange;
@@ -32,7 +32,7 @@ public class ShipAircraftAttackGoal extends Goal {
         if (!this.host.canFindTarget())
             return false;
 
-        Entity target = this.host.getEntityTarget();
+        LivingEntity target = this.host.getTarget();
         if (this.host.tickCount > 20 && target != null && target.isAlive() &&
                 ((this.host.useAmmoLight() && this.host.hasAmmoLight()) ||
                         (this.host.useAmmoHeavy() && this.host.hasAmmoHeavy()))) {
@@ -62,8 +62,7 @@ public class ShipAircraftAttackGoal extends Goal {
     public boolean canContinueToUse() {
         if (!this.host.canFindTarget())
             return false;
-        return this.canUse() || (this.target != null && this.target.isAlive()
-                && this.host.getShipNavigate() != null && !this.host.getShipNavigate().noPath());
+        return this.canUse() || (this.target != null && this.target.isAlive());
     }
 
     @Override
@@ -71,14 +70,12 @@ public class ShipAircraftAttackGoal extends Goal {
         this.target = null;
 
         // keep moving - aircraft shouldn't stop in air
-        if (this.host.getShipNavigate() != null) {
-            if (this.host.useAmmoHeavy()) {
-                this.randPos = BlockHelper.findRandomPosition(this.host, this.host, 12D, 4D, 2);
-            } else {
-                this.randPos = BlockHelper.findRandomPosition(this.host, this.host, 4.5D, 1.5D, 2);
-            }
-            this.host.getShipNavigate().tryMoveToXYZ(randPos[0], randPos[1], randPos[2], 1D);
+        if (this.host.useAmmoHeavy()) {
+            this.randPos = BlockHelper.findRandomPosition(this.host, this.host, 12D, 4D, 2);
+        } else {
+            this.randPos = BlockHelper.findRandomPosition(this.host, this.host, 4.5D, 1.5D, 2);
         }
+        this.host.getNavigation().moveTo(randPos[0], randPos[1], randPos[2], 1D);
     }
 
     @Override
@@ -90,7 +87,6 @@ public class ShipAircraftAttackGoal extends Goal {
         double distSq = this.host.distanceToSqr(this.target);
 
         // navigate toward target periodically using custom ship navigator
-        if ((this.host.tickCount & 15) == 0 && this.host.getShipNavigate() != null) {
             if (this.host.useAmmoHeavy()) {
                 this.randPos = BlockHelper.findRandomPosition(this.host, this.target, 12D, 4D, 2);
             } else {
@@ -98,11 +94,10 @@ public class ShipAircraftAttackGoal extends Goal {
             }
 
             if (distSq > this.rangeSq) {
-                this.host.getShipNavigate().tryMoveToXYZ(randPos[0], randPos[1], randPos[2], 1D);
+                this.host.getNavigation().moveTo(randPos[0], randPos[1], randPos[2], 1D);
             } else {
-                this.host.getShipNavigate().tryMoveToXYZ(randPos[0], randPos[1], randPos[2], 0.4D);
+                this.host.getNavigation().moveTo(randPos[0], randPos[1], randPos[2], 0.4D);
             }
-        }
 
         this.atkDelay--;
 

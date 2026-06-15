@@ -4,8 +4,11 @@ import com.lulan.shincolle.init.ModItems;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.storage.loot.LootContext;
+import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
 import net.minecraftforge.common.loot.IGlobalLootModifier;
 import net.minecraftforge.common.loot.LootModifier;
@@ -30,7 +33,11 @@ public class AddItemModifier extends LootModifier {
     protected @NotNull ObjectArrayList<ItemStack> doApply(ObjectArrayList<ItemStack> generatedLoot, LootContext context) {
         // ここにドロップさせたいアイテムを追加
         int count = context.getRandom().nextInt(3) + 1;
-        generatedLoot.add(new ItemStack(ModItems.GRUDGE.get(), count));
+        Entity entity = context.getParamOrNull(LootContextParams.THIS_ENTITY);
+        if (entity instanceof Enemy) {
+            generatedLoot.add(new ItemStack(ModItems.GRUDGE.get(), count));
+        }
+
         return generatedLoot;
     }
 

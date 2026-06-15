@@ -270,7 +270,7 @@ public class BlockHelper {
 
 
                     newPos[2] = target.getZ() - newPos[2];
-                    
+
                     break;
                 case 2: // straight ahead
                     newPos[0] = rand.nextDouble() * randDist + minDist;

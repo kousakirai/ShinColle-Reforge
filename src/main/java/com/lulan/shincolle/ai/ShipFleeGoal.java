@@ -1,5 +1,6 @@
 package com.lulan.shincolle.ai;
 
+import com.lulan.shincolle.entity.BasicEntityMount;
 import com.lulan.shincolle.entity.BasicEntityShip;
 import com.lulan.shincolle.reference.ID;
 import com.lulan.shincolle.server.ServerDataManager;
@@ -50,7 +51,7 @@ public class ShipFleeGoal extends Goal {
     @Override
     public void stop() {
         this.owner = null;
-        this.ship.getShipNavigate().clearPathEntity();
+        ship.getNavigation().stop();
     }
 
     @Override
@@ -60,10 +61,10 @@ public class ShipFleeGoal extends Goal {
 
             if (this.owner != null && this.owner.isAlive()) {
                 boolean canMove;
-                if (this.ship.isPassenger() && this.ship.getVehicle() instanceof com.lulan.shincolle.entity.BasicEntityMount mount) {
-                    canMove = mount.getShipNavigate().tryMoveToEntityLiving(this.owner, 1.2D);
+                if (this.ship.isPassenger() && this.ship.getVehicle() instanceof BasicEntityMount mount) {
+                    canMove = mount.getNavigation().moveTo(this.owner, 1.2D);
                 } else {
-                    canMove = this.ship.getShipNavigate().tryMoveToEntityLiving(this.owner, 1.2D);
+                    canMove = ship.getNavigation().moveTo(this.owner, 1.2D);
                 }
 
                 // move failed or stuck, teleport entity

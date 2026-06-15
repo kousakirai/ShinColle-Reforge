@@ -232,17 +232,17 @@ public class EquipCalc {
             case ID.EquipType.CANNON_TW_HI:
             case ID.EquipType.CANNON_TR:
                 item = new ItemStack(ModItems.EQUIP_CANNON.get());
-                
+
                 break;
             case ID.EquipType.GUN_LO:
             case ID.EquipType.GUN_HI:
                 item = new ItemStack(ModItems.EQUIP_MACHINEGUN.get());
-                
+
                 break;
             case ID.EquipType.TORPEDO_LO:
             case ID.EquipType.TORPEDO_HI:
                 item = new ItemStack(ModItems.EQUIP_TORPEDO.get());
-                
+
                 break;
             case ID.EquipType.AIR_T_LO:
             case ID.EquipType.AIR_T_HI:
@@ -253,7 +253,7 @@ public class EquipCalc {
             case ID.EquipType.AIR_R_LO:
             case ID.EquipType.AIR_R_HI:
                 item = new ItemStack(ModItems.EQUIP_AIRPLANE.get());
-                
+
                 break;
             case ID.EquipType.RADAR_LO:
             case ID.EquipType.RADAR_HI:
@@ -294,7 +294,7 @@ public class EquipCalc {
             case ID.EquipType.AMMO_LO:
             case ID.EquipType.AMMO_HI:
                 item = new ItemStack(ModItems.EQUIP_AMMO.get());
-                
+
                 break;
             default:
                 return ItemStack.EMPTY;

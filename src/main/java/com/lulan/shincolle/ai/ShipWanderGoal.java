@@ -38,7 +38,7 @@ public class ShipWanderGoal extends Goal {
 
     @Override
     public boolean canContinueToUse() {
-        return !this.ship.getShipNavigate().noPath();
+        return !ship.getNavigation().isDone();
     }
 
     @Override
@@ -54,7 +54,7 @@ public class ShipWanderGoal extends Goal {
                 this.targetX = x;
                 this.targetY = y;
                 this.targetZ = z;
-                this.ship.getShipNavigate().tryMoveToXYZ(targetX, targetY, targetZ, speed);
+                ship.getNavigation().moveTo(targetX, targetY, targetZ, speed);
                 return;
             }
         }
