@@ -1,14 +1,14 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 質問・相談
+  - name: 質問・相談 / Questions and Inquiries
     url: https://github.com/kousakirai/ShinColle-Reforge/discussions
-    about: バグ報告や機能リクエスト以外の質問・相談はDiscussionsをご利用ください。
+    about: バグ報告や機能リクエスト以外の質問・相談はDiscussionsをご利用ください。 / Please use Discussions for questions and inquiries other than bug reports and feature requests.
 
 # Issue作成時のテンプレート設定
 defaults:
   - template: "bug_report.yml"
-    name: "🐛 バグ報告"
-    about: "バグを報告する"
+    name: "🐛 バグ報告 / Bug Report"
+    about: "バグを報告する / Report a Bug"
   - template: "feature_request.yml"
-    name: "💡 機能リクエスト"
-    about: "新機能のアイデアを提案する"
+    name: "💡 機能リクエスト / Feature Request"
+    about: "新機能のアイデアを提案する / Suggest Ideas for New Features"
