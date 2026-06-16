@@ -37,7 +37,7 @@ body:
     validations:
       required: true
 
-  - type: dropdown
+  - type: textarea
     id: version
     attributes:
       label: そのバグが確認されたバージョン
