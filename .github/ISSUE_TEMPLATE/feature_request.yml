@@ -12,7 +12,7 @@ body:
     attributes:
       label: 関連する問題 / Related Issues
       description: この機能リクエストに関連する問題を説明してください / Please describe the issue related to this feature request.
-      placeholder: 例）〜の操作が面倒です / Example: It is a hassle to do ~
+      placeholder: 例）〜の操作が面倒です / Example： It is a hassle to do ~
     validations:
       required: true
 
