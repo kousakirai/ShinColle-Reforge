@@ -48,7 +48,7 @@ public class ShipAircraftAttackGoal extends Goal {
         this.atkDelay = 0;
         this.maxDelay = (int) (ConfigHandler.baseAttackSpeed[4] / Math.max(this.host.getAttrs().getAttackSpeed(), 0.01F))
                 + ConfigHandler.fixedAttackDelay[4];
-        this.attackRange = this.host.useAmmoHeavy() ? 16.0F : 6.0F;
+        this.attackRange = this.host.useAmmoHeavy() && this.host.hasAmmoHeavy() ? 16.0F : 6.0F;
         this.rangeSq = this.attackRange * this.attackRange;
 
         // init movement target position
@@ -96,16 +96,15 @@ public class ShipAircraftAttackGoal extends Goal {
 
         // 16tickごとにのみナビゲーション更新
         if ((this.host.tickCount & 15) == 0) {
-            if (this.host.useAmmoHeavy()) {
-                this.randPos = BlockHelper.findRandomPosition(this.host, this.target, 12D, 4D, 2);
-            } else {
-                this.randPos = BlockHelper.findRandomPosition(this.host, this.target, 4.5D, 1.5D, 2);
-            }
-
-            if (distSq > this.rangeSq) {
-                this.host.getNavigation().moveTo(randPos[0], randPos[1], randPos[2], 1D);
-            } else {
-                this.host.getNavigation().moveTo(randPos[0], randPos[1], randPos[2], 0.4D);
+            boolean useHeavyAmmo = this.host.useAmmoHeavy() && this.host.hasAmmoHeavy();
+            double[] nextPosition = useHeavyAmmo
+                    ? BlockHelper.findRandomPosition(this.host, this.target, 12D, 4D, 2)
+                    : BlockHelper.findRandomPosition(this.host, this.target, 4.5D, 1.5D, 2);
+            if (nextPosition != null) {
+                this.randPos = nextPosition;
+                this.host.getNavigation().moveTo(
+                        nextPosition[0], nextPosition[1], nextPosition[2],
+                        distSq > this.rangeSq ? 1D : 0.4D);
             }
         }
 

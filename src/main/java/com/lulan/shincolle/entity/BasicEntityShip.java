@@ -1,6 +1,8 @@
 package com.lulan.shincolle.entity;
 
+import com.mojang.serialization.Dynamic;
 import com.lulan.shincolle.ai.*;
+import com.lulan.shincolle.ai.brain.ShipBrain;
 import com.lulan.shincolle.ai.path.ShipMoveControl;
 import com.lulan.shincolle.ai.path.ShipNavigation;
 import com.lulan.shincolle.capability.CapaShipInventory;
@@ -47,6 +49,7 @@ import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.*;
+import net.minecraft.world.entity.ai.Brain;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.control.MoveControl;
@@ -243,6 +246,31 @@ public abstract class BasicEntityShip extends TamableAnimal
 
     public ShipMoveControl createMoveControl() {
         return new ShipMoveControl(this, this.canFly(), 10F); // rotateLimitは用途に応じて調整
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public Brain<BasicEntityShip> getBrain() {
+        return (Brain<BasicEntityShip>) super.getBrain();
+    }
+
+    @Override
+    protected Brain.Provider<BasicEntityShip> brainProvider() {
+        return Brain.provider(ShipBrain.getMemoryTypes(), ShipBrain.getSensorTypes());
+    }
+
+    @Override
+    protected Brain<?> makeBrain(Dynamic<?> dynamic) {
+        Brain<BasicEntityShip> brain = this.brainProvider().makeBrain(dynamic);
+        ShipBrain.registerGoals(brain);
+        return brain;
+    }
+
+    @Override
+    protected void customServerAiStep() {
+        ShipBrain.syncState(this.getBrain(), this);
+        this.getBrain().tick((ServerLevel) this.level(), this);
+        super.customServerAiStep();
     }
     // ========== Static Attribute Builder (1.20.1) ==========
 

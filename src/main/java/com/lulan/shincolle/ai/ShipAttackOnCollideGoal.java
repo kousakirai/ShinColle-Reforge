@@ -32,7 +32,7 @@ public class ShipAttackOnCollideGoal extends Goal {
         this.speed = speed;
         this.delayMax = 20;
         this.delayAttack = 20;
-        this.setFlags(EnumSet.of(Goal.Flag.JUMP));
+        this.setFlags(EnumSet.of(Goal.Flag.MOVE, Goal.Flag.LOOK));
     }
 
     @Override

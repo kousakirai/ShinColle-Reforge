@@ -36,7 +36,7 @@ public class ShipCarrierAttackGoal extends Goal {
     public ShipCarrierAttackGoal(IShipAircraftAttack host) {
         this.host = host;
         this.entity = (Mob) host;
-        this.setFlags(EnumSet.of(Goal.Flag.LOOK));
+        this.setFlags(EnumSet.of(Goal.Flag.MOVE, Goal.Flag.LOOK));
 
         this.launchDelay = 20;
         this.launchDelayMax = 40;
@@ -49,19 +49,13 @@ public class ShipCarrierAttackGoal extends Goal {
             return false;
         }
 
-        if (this.host.getIsRiding()) {
-            if (this.entity.getVehicle() instanceof BasicEntityMount) {
-                return false;
-            }
+        if (this.isMountedOnShipMount()) {
+            return false;
         }
 
         LivingEntity target = this.entity.getTarget();
 
-        if (target != null && target.isAlive() &&
-                ((this.host.getAttackType(ID.F.AtkType_AirLight) && this.host.getStateFlag(ID.F.UseAirLight)
-                        && this.host.hasAmmoLight() && this.host.hasAirLight()) ||
-                        (this.host.getAttackType(ID.F.AtkType_AirHeavy) && this.host.getStateFlag(ID.F.UseAirHeavy)
-                                && this.host.hasAmmoHeavy() && this.host.hasAirHeavy()))) {
+        if (target != null && target.isAlive() && this.canLaunchAnyAircraft()) {
             this.target = target;
             return true;
         }
@@ -76,13 +70,17 @@ public class ShipCarrierAttackGoal extends Goal {
         this.distX = 0D;
         this.distY = 0D;
         this.distZ = 0D;
+        this.updateCombatParameters();
     }
 
     @Override
     public boolean canContinueToUse() {
         return this.target != null
                 && this.target.isAlive()
-                && !this.host.getIsSitting();
+                && !this.host.getIsSitting()
+                && this.host.getStateMinor(ID.M.CraneState) <= 0
+                && !this.isMountedOnShipMount()
+                && this.canLaunchAnyAircraft();
     }
 
     @Override
@@ -107,19 +105,7 @@ public class ShipCarrierAttackGoal extends Goal {
 
         // update attributes every 64 ticks
         if (this.entity.tickCount % 31 == 0) {
-            float atkSpd = this.host.getAttrs().getAttackSpeed();
-
-            // calculate attack delay based on current launch type
-            if (this.launchType) {
-                // light aircraft: type 3
-                this.launchDelayMax = CombatHelper.getAttackDelay(atkSpd, 3);
-            } else {
-                // heavy aircraft: type 4
-                this.launchDelayMax = CombatHelper.getAttackDelay(atkSpd, 4);
-            }
-
-            this.range = this.host.getAttrs().getAttackRange();
-            this.rangeSq = this.range * this.range;
+            this.updateCombatParameters();
         }
 
         // chase / stop logic with cached distance (matching original's two-stage pattern)
@@ -172,5 +158,28 @@ public class ShipCarrierAttackGoal extends Goal {
             this.launchDelay = 20;
             this.stop();
         }
+    }
+
+    private boolean isMountedOnShipMount() {
+        return this.host.getIsRiding() && this.entity.getVehicle() instanceof BasicEntityMount;
+    }
+
+    private boolean canLaunchAnyAircraft() {
+        boolean canLaunchLight = this.host.getAttackType(ID.F.AtkType_AirLight)
+                && this.host.getStateFlag(ID.F.UseAirLight)
+                && this.host.hasAmmoLight()
+                && this.host.hasAirLight();
+        boolean canLaunchHeavy = this.host.getAttackType(ID.F.AtkType_AirHeavy)
+                && this.host.getStateFlag(ID.F.UseAirHeavy)
+                && this.host.hasAmmoHeavy()
+                && this.host.hasAirHeavy();
+        return canLaunchLight || canLaunchHeavy;
+    }
+
+    private void updateCombatParameters() {
+        float attackSpeed = this.host.getAttrs().getAttackSpeed();
+        this.launchDelayMax = CombatHelper.getAttackDelay(attackSpeed, this.launchType ? 3 : 4);
+        this.range = this.host.getAttrs().getAttackRange();
+        this.rangeSq = this.range * this.range;
     }
 }

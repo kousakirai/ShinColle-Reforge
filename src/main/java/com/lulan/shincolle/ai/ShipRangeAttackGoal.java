@@ -37,7 +37,7 @@ public class ShipRangeAttackGoal extends Goal {
     public ShipRangeAttackGoal(IShipCannonAttack host) {
         this.host = host;
         this.entity = (Mob) host;
-        this.setFlags(EnumSet.of(Goal.Flag.MOVE));
+        this.setFlags(EnumSet.of(Goal.Flag.MOVE, Goal.Flag.LOOK));
 
         this.delayLight = INITIAL_LIGHT_DELAY;
         this.delayHeavy = INITIAL_HEAVY_DELAY;
@@ -54,19 +54,13 @@ public class ShipRangeAttackGoal extends Goal {
                 return false;
             }
 
-            if (this.host.getIsRiding()) {
-                if (this.entity.getVehicle() instanceof BasicEntityMount) {
-                    DebugProfiler.count(profiler, "shincolle.ai.range_attack.blocked.mount_controls_attack");
-                    return false;
-                }
+            if (this.isMountedOnShipMount()) {
+                DebugProfiler.count(profiler, "shincolle.ai.range_attack.blocked.mount_controls_attack");
+                return false;
             }
 
             LivingEntity target = this.entity.getTarget();
-            if (target != null && target.isAlive() &&
-                    ((this.host.getAttackType(ID.F.AtkType_Light) && this.host.getStateFlag(ID.F.UseAmmoLight)
-                            && this.host.hasAmmoLight()) ||
-                            (this.host.getAttackType(ID.F.AtkType_Heavy) && this.host.getStateFlag(ID.F.UseAmmoHeavy)
-                                    && this.host.hasAmmoHeavy()))) {
+            if (target != null && target.isAlive() && this.canUseAnyRangedAttack()) {
                 this.target = target;
                 DebugProfiler.count(profiler, "shincolle.ai.range_attack.can_use.success");
                 return true;
@@ -95,7 +89,10 @@ public class ShipRangeAttackGoal extends Goal {
     public boolean canContinueToUse() {
         return this.target != null
                 && this.target.isAlive()
-                && !this.host.getIsSitting();
+                && !this.host.getIsSitting()
+                && this.host.getStateMinor(ID.M.CraneState) <= 0
+                && !this.isMountedOnShipMount()
+                && this.canUseAnyRangedAttack();
     }
 
     @Override
@@ -164,7 +161,7 @@ public class ShipRangeAttackGoal extends Goal {
             }
 
             // reset if stuck too long without hitting
-            if (this.delayHeavy < -40 && this.delayLight < -40) {
+            if (this.delayHeavy < STUCK_RESET_THRESHOLD && this.delayLight < STUCK_RESET_THRESHOLD) {
                 DebugProfiler.count(profiler, "shincolle.ai.range_attack.tick.stuck_reset");
                 this.delayLight = 20;
                 this.delayHeavy = 20;
