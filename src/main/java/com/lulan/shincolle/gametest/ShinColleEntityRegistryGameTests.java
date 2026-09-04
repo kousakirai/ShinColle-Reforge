@@ -47,6 +47,7 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.GoalSelector;
@@ -1254,7 +1255,7 @@ public final class ShinColleEntityRegistryGameTests {
         }
 
         rangeGoal.start();
-        Entity selected = hostile.getEntityTarget();
+        LivingEntity selected = hostile.getTarget();
         if (!(selected instanceof BasicEntityShip)) {
             throw new AssertionError("Hostile acquired unexpected target type. expected=friendly ship actual="
                     + (selected == null ? "null" : selected.getType().toShortString()));
@@ -1311,7 +1312,7 @@ public final class ShinColleEntityRegistryGameTests {
         }
 
         rangeGoal.start();
-        Entity selected = friendly.getEntityTarget();
+        LivingEntity selected = friendly.getTarget();
         if (!(selected instanceof BasicEntityShipHostile)) {
             throw new AssertionError("Friendly acquired unexpected target type. expected=hostile ship actual="
                     + (selected == null ? "null" : selected.getType().toShortString()));

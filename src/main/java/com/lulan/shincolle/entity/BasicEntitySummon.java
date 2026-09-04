@@ -50,7 +50,7 @@ public abstract class BasicEntitySummon extends Mob implements IShipOwner, IShip
 
     @Override
     protected @NotNull ShipNavigation createNavigation(@NotNull Level level) {
-        return new ShipNavigation(this, level);
+        return new ShipNavigation(this, level, this.canFly());
     }
 
     // ========== Static Attributes ==========
@@ -61,7 +61,7 @@ public abstract class BasicEntitySummon extends Mob implements IShipOwner, IShip
     protected void postInit() {
         // [PORT] 1.10.2 -> 1.20.1: restore legacy summon turn-rate cap for ship-type
         // summons.
-        this.moveControl = new ShipMoveControl(this, 60F, 1.5F);
+        this.moveControl = new ShipMoveControl(this, this.canFly(), 10F);
     }
 
     // ========== Abstract Methods ==========
@@ -146,7 +146,7 @@ public abstract class BasicEntitySummon extends Mob implements IShipOwner, IShip
                 // try host's target
                 if (this.host != null && target != null
                         && target.isAlive()) {
-                    Entity host_target = this.host.getEntityTarget();
+                    Entity host_target = this.getTarget();
 
                     if (host_target instanceof LivingEntity living) {
                         this.setTarget(living);

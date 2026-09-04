@@ -1,6 +1,8 @@
 package com.lulan.shincolle;
 
 import com.lulan.shincolle.capability.CapabilityHandler;
+import com.lulan.shincolle.client.AiDebugRenderer;
+import com.lulan.shincolle.client.ClientConfigScreen;
 import com.lulan.shincolle.command.CommandHandler;
 import com.lulan.shincolle.config.ConfigMining;
 import com.lulan.shincolle.handler.ConfigHandler;
@@ -9,6 +11,7 @@ import com.lulan.shincolle.loot.ShinColleLootModifiers;
 import com.lulan.shincolle.network.ModNetworking;
 import com.lulan.shincolle.reference.Reference;
 import com.lulan.shincolle.worldgen.ModWorldGen;
+import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.ModLoadingContext;
@@ -17,6 +20,7 @@ import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.config.ModConfigEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import net.minecraftforge.fml.loading.FMLPaths;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,6 +49,15 @@ public class ShinColle {
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, ConfigHandler.COMMON_SPEC,
                 "shincolle-common.toml");
 
+        // Register config screen (client only)
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            ClientConfigScreen.register();
+        }
+        // クライアント専用の登録はここでガードする
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            ClientConfigScreen.register();
+            MinecraftForge.EVENT_BUS.register(AiDebugRenderer.class);
+        }
         // Register lifecycle event listeners
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::onConfigLoad);

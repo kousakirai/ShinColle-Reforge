@@ -145,6 +145,7 @@ public class S2CGUISyncPacket {
             for (int i = 0; i < CapaTeitoku.SLOT_NUM; i++) {
                 buf.writeInt(capa.getTeamMember(teamId, i));
                 buf.writeInt(capa.getTeamSID(teamId, i));
+                buf.writeBoolean(capa.getSelectStateCurrentTeam(i));
             }
         });
         return new S2CGUISyncPacket(SyncPlayerProp, data);
@@ -189,6 +190,7 @@ public class S2CGUISyncPacket {
             for (int i = 0; i < CapaTeitoku.SLOT_NUM; i++) {
                 buf.writeInt(capa.getTeamMember(teamId, i));
                 buf.writeInt(capa.getTeamSID(teamId, i));
+                buf.writeBoolean(capa.getSelectStateCurrentTeam(i));
             }
         });
         return new S2CGUISyncPacket(SyncPlayerProp_ShipsInTeam, data);
@@ -212,6 +214,7 @@ public class S2CGUISyncPacket {
                 for (int s = 0; s < CapaTeitoku.SLOT_NUM; s++) {
                     buf.writeInt(capa.getTeamMember(t, s));
                     buf.writeInt(capa.getTeamSID(t, s));
+                    buf.writeBoolean(capa.getSelectState(t, s));
                 }
             }
         });
@@ -462,6 +465,9 @@ public class S2CGUISyncPacket {
         for (int i = 0; i < CapaTeitoku.SLOT_NUM; i++) {
             capa.setTeamMember(teamId, i, buf.readInt());
             capa.setTeamSID(teamId, i, buf.readInt());
+            if (buf.readableBytes() > 0) {
+                capa.setSelectState(teamId, i, buf.readBoolean());
+            }
         }
     }
 
@@ -524,6 +530,9 @@ public class S2CGUISyncPacket {
             for (int s = 0; s < CapaTeitoku.SLOT_NUM; s++) {
                 capa.setTeamMember(t, s, buf.readInt());
                 capa.setTeamSID(t, s, buf.readInt());
+                if (buf.readableBytes() > 0) {
+                    capa.setSelectState(t, s, buf.readBoolean());
+                }
             }
         }
     }
@@ -544,6 +553,9 @@ public class S2CGUISyncPacket {
         for (int i = 0; i < CapaTeitoku.SLOT_NUM; i++) {
             capa.setTeamMember(teamId, i, buf.readInt());
             capa.setTeamSID(teamId, i, buf.readInt());
+            if (buf.readableBytes() > 0) {
+                capa.setSelectState(teamId, i, buf.readBoolean());
+            }
         }
     }
 

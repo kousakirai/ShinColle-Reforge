@@ -27,13 +27,14 @@ public class ShipAircraftAttackGoal extends Goal {
         this.setFlags(EnumSet.of(Goal.Flag.MOVE, Goal.Flag.LOOK));
     }
 
+    // ターゲットが存在する間は canUse() が常に true を返すようにする
+// ShipAircraftAttackGoal.canUse()
     @Override
     public boolean canUse() {
-        if (!this.host.canFindTarget())
-            return false;
+        if (!this.host.canFindTarget()) return false;
 
         LivingEntity target = this.host.getTarget();
-        if (this.host.tickCount > 20 && target != null && target.isAlive() &&
+        if (target != null && target.isAlive() &&
                 ((this.host.useAmmoLight() && this.host.hasAmmoLight()) ||
                         (this.host.useAmmoHeavy() && this.host.hasAmmoHeavy()))) {
             this.target = target;
@@ -58,35 +59,43 @@ public class ShipAircraftAttackGoal extends Goal {
         }
     }
 
+    // canContinueToUse() はターゲットがいる間は true を維持
     @Override
     public boolean canContinueToUse() {
-        if (!this.host.canFindTarget())
-            return false;
-        return this.canUse() || (this.target != null && this.target.isAlive());
+        if (!this.host.canFindTarget()) return false;
+        LivingEntity current = this.host.getTarget();
+        if (current == null || !current.isAlive()) return false;
+        this.target = current;
+        return (this.host.useAmmoLight() && this.host.hasAmmoLight()) ||
+                (this.host.useAmmoHeavy() && this.host.hasAmmoHeavy());
     }
 
     @Override
     public void stop() {
         this.target = null;
 
-        // keep moving - aircraft shouldn't stop in air
-        if (this.host.useAmmoHeavy()) {
-            this.randPos = BlockHelper.findRandomPosition(this.host, this.host, 12D, 4D, 2);
-        } else {
-            this.randPos = BlockHelper.findRandomPosition(this.host, this.host, 4.5D, 1.5D, 2);
+        // ランダム移動も16tick後に任せる（即時呼び出し不要）
+        if ((this.host.tickCount & 15) == 0) {
+            double[] pos = this.host.useAmmoHeavy()
+                    ? BlockHelper.findRandomPosition(this.host, this.host, 12D, 4D, 2)
+                    : BlockHelper.findRandomPosition(this.host, this.host, 4.5D, 1.5D, 2);
+
+            if (pos != null) {
+                this.randPos = pos;
+                this.host.getNavigation().moveTo(pos[0], pos[1], pos[2], 1D);
+            }
         }
-        this.host.getNavigation().moveTo(randPos[0], randPos[1], randPos[2], 1D);
     }
 
     @Override
     public void tick() {
-        if (this.target == null)
-            return;
+        if (this.target == null) return;
 
         boolean onSight = this.host.getSensing().hasLineOfSight(this.target);
         double distSq = this.host.distanceToSqr(this.target);
 
-        // navigate toward target periodically using custom ship navigator
+        // 16tickごとにのみナビゲーション更新
+        if ((this.host.tickCount & 15) == 0) {
             if (this.host.useAmmoHeavy()) {
                 this.randPos = BlockHelper.findRandomPosition(this.host, this.target, 12D, 4D, 2);
             } else {
@@ -98,16 +107,15 @@ public class ShipAircraftAttackGoal extends Goal {
             } else {
                 this.host.getNavigation().moveTo(randPos[0], randPos[1], randPos[2], 0.4D);
             }
+        }
 
         this.atkDelay--;
 
-        // attack when able
         if (this.atkDelay <= 0 && onSight && distSq < this.rangeSq) {
             if (this.host.useAmmoLight() && this.host.hasAmmoLight()) {
                 this.host.attackEntityWithAmmo(this.target);
                 this.atkDelay = this.maxDelay;
             }
-
             if (this.host.useAmmoHeavy() && this.host.hasAmmoHeavy()) {
                 this.host.attackEntityWithHeavyAmmo(this.target);
                 this.atkDelay = this.maxDelay;

@@ -9,13 +9,11 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.FlyingMob;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.ai.goal.target.TargetGoal;
+import net.minecraft.world.entity.ai.targeting.TargetingConditions;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.EnumSet;
 import java.util.List;
 
 /**
@@ -24,94 +22,96 @@ import java.util.List;
  * <p>
  * Target priority: AntiAir > AntiSub > PVPFirst > normal target
  */
-public class ShipRangeTargetGoal extends Goal {
+public class ShipRangeTargetGoal extends TargetGoal {
+
+    /**
+     * Target acquisition is an expensive world query.  Five ticks keeps the
+     * response snappy while avoiding a full scan for every idle ship on every
+     * server tick.  This follows the same cadence used by LittleMaid's custom
+     * nearest-target goal.
+     */
+    private static final int TARGET_SCAN_INTERVAL = 5;
 
     protected final IShipAttackBase host;
-    protected final Mob entity;
     protected final java.util.function.Predicate<Entity> targetSelector;
     protected BasicEntityShip hostShip;
     protected Entity targetEntity;
     protected int range;
+    private int nextTargetScanTick;
+    private TargetingConditions targetingConditions;
 
     public ShipRangeTargetGoal(IShipAttackBase host) {
+        super((Mob)host, false);
         this.host = host;
-        this.entity = (Mob) host;
-        // [PORT] 1.10.2 targetTasks mutex -> 1.20.1 TARGET control flag.
-        this.setFlags(EnumSet.of(Goal.Flag.TARGET));
 
         if (host instanceof BasicEntityShip) {
             this.hostShip = (BasicEntityShip) host;
-            this.targetSelector = new TargetHelper.Selector(this.entity);
+            this.targetSelector = new TargetHelper.Selector(this.mob);
         } else if (host instanceof BasicEntityShipHostile) {
             this.hostShip = null;
-            this.targetSelector = new TargetHelper.SelectorForHostile(this.entity);
+            this.targetSelector = new TargetHelper.SelectorForHostile(this.mob);
         } else {
             this.hostShip = null;
-            this.targetSelector = new TargetHelper.Selector(this.entity);
+            this.targetSelector = new TargetHelper.Selector(this.mob);
         }
 
         updateRange();
-    }
-
-    private static boolean hasNoTargets(List<LivingEntity> targets) {
-        return targets == null || targets.isEmpty();
+        this.nextTargetScanTick = 0;
+        this.targetingConditions = TargetingConditions.forCombat().range(this.range);
     }
 
     @Override
     public boolean canUse() {
-        ProfilerFiller profiler = DebugProfiler.push(this.entity.level(), "shincolle.ai.range_target.can_use");
+        ProfilerFiller profiler = DebugProfiler.push(this.mob.level(), "shincolle.ai.range_target.can_use");
         try {
             if (this.host.getIsSitting() || this.host.getStateMinor(ID.M.CraneState) > 0) {
                 DebugProfiler.count(profiler, "shincolle.ai.range_target.blocked.sit_or_crane");
                 return false;
             }
-            updateRange();
 
-            AABB searchBox = this.entity.getBoundingBox().inflate(this.range, this.range * 2D, this.range * 2D);
-            List<LivingEntity> targets = null;
+            if (this.mob.tickCount < this.nextTargetScanTick) {
+                DebugProfiler.count(profiler, "shincolle.ai.range_target.can_use.cooldown");
+                return false;
+            }
+            this.nextTargetScanTick = this.mob.tickCount + TARGET_SCAN_INTERVAL;
+            updateRange();
+            this.targetingConditions = TargetingConditions.forCombat().range(this.range);
+
+            AABB searchBox = this.mob.getBoundingBox().inflate(this.range, this.range * 2D, this.range * 2D);
+            LivingEntity target = null;
 
             // Priority-based target selection for friendly ships
             if (this.hostShip != null) {
                 // 1. Anti-Air: target flying entities first
                 if (this.hostShip.getStateFlag(ID.F.AntiAir)) {
-                    targets = findTargetsByType(searchBox, IShipFlyable.class);
+                    target = findNearestTargetByType(searchBox, IShipFlyable.class);
                     // also search for vanilla flying mobs
-                    List<LivingEntity> flyingTargets = findTargetsByType(searchBox, FlyingMob.class);
-                    targets = unionLists(targets, flyingTargets);
+                    LivingEntity flyingTarget = findNearestTargetByType(searchBox, FlyingMob.class);
+                    target = nearestOf(target, flyingTarget);
                 }
 
                 // 2. Anti-Sub: target invisible/submarine entities
-                if (targets == null || targets.isEmpty()) {
+                if (target == null) {
                     if (this.hostShip.getStateFlag(ID.F.AntiSS)) {
-                        targets = findTargetsByType(searchBox, IShipInvisible.class);
+                        target = findNearestTargetByType(searchBox, IShipInvisible.class);
                     }
                 }
 
                 // 3. PVP First: target other player's ships
-                if (targets == null || targets.isEmpty()) {
+                if (target == null) {
                     if (this.hostShip.getStateFlag(ID.F.PVPFirst)) {
-                        targets = findTargetsByType(searchBox, BasicEntityShip.class);
+                        target = findNearestTargetByType(searchBox, BasicEntityShip.class);
                     }
                 }
             }
 
             // 4. Normal: any valid target
-            if (targets == null || targets.isEmpty()) {
-                targets = this.entity.level().getEntitiesOfClass(LivingEntity.class, searchBox,
-                        this::isValidTarget);
+            if (target == null) {
+                target = findNearestTarget(searchBox);
             }
-            System.out.println("Targets found = " + targets.size());
 
-            if (!targets.isEmpty()) {
-                // sort by distance
-                targets.sort(Comparator.comparingDouble(this.entity::distanceToSqr));
-
-                // pick nearest, or random from top 3
-                if (targets.size() > 2) {
-                    this.targetEntity = targets.get(this.entity.getRandom().nextInt(3));
-                } else {
-                    this.targetEntity = targets.get(0);
-                }
+            if (target != null) {
+                this.targetEntity = target;
                 DebugProfiler.count(profiler, "shincolle.ai.range_target.can_use.success");
                 return true;
             }
@@ -127,55 +127,53 @@ public class ShipRangeTargetGoal extends Goal {
      * Find targets that implement a specific interface/class within the search box.
      * Also applies the target selector predicate.
      */
-    private <T> List<LivingEntity> findTargetsByType(AABB searchBox, Class<T> targetType) {
-        List<LivingEntity> result = new ArrayList<>();
-        for (LivingEntity e : this.entity.level().getEntitiesOfClass(LivingEntity.class, searchBox,
-                this::isValidTarget)) {
-            if (targetType.isInstance(e)) {
-                result.add(e);
-            }
-        }
-        return result.isEmpty() ? null : result;
+    private LivingEntity findNearestTarget(AABB searchBox) {
+        List<LivingEntity> candidates = this.mob.level().getEntitiesOfClass(
+                LivingEntity.class, searchBox, this::isValidTarget);
+        return this.mob.level().getNearestEntity(candidates, this.targetingConditions, this.mob,
+                this.mob.getX(), this.mob.getEyeY(), this.mob.getZ());
     }
 
-    /**
-     * Union two lists, returning a combined non-null list.
-     */
-    private List<LivingEntity> unionLists(List<LivingEntity> a, List<LivingEntity> b) {
-        if (a == null || a.isEmpty())
-            return b;
-        if (b == null || b.isEmpty())
-            return a;
-        List<LivingEntity> result = new ArrayList<>(a);
-        for (LivingEntity e : b) {
-            if (!result.contains(e)) {
-                result.add(e);
-            }
+    private <T> LivingEntity findNearestTargetByType(AABB searchBox, Class<T> targetType) {
+        List<LivingEntity> candidates = this.mob.level().getEntitiesOfClass(
+                LivingEntity.class, searchBox, entity -> targetType.isInstance(entity) && isValidTarget(entity));
+        return this.mob.level().getNearestEntity(candidates, this.targetingConditions, this.mob,
+                this.mob.getX(), this.mob.getEyeY(), this.mob.getZ());
+    }
+
+    private LivingEntity nearestOf(LivingEntity first, LivingEntity second) {
+        if (first == null) {
+            return second;
         }
-        return result;
+        if (second == null || this.mob.distanceToSqr(first) <= this.mob.distanceToSqr(second)) {
+            return first;
+        }
+        return second;
     }
 
     @Override
     public void start() {
         if (this.host != null) {
-            this.entity.setTarget((LivingEntity) this.targetEntity);
+            this.mob.setTarget((LivingEntity) this.targetEntity);
         }
     }
 
     @Override
     public void stop() {
+        this.mob.setTarget(null);
+        this.targetEntity = null;
     }
 
     @Override
     public boolean canContinueToUse() {
-        Entity target = this.entity.getTarget();
+        LivingEntity target = this.mob.getTarget();
 
         if (target == null || !target.isAlive()) {
             return false;
         }
 
         double d0 = this.range * this.range;
-        if (this.entity.distanceToSqr(target) > d0) {
+        if (this.mob.distanceToSqr(target) > d0) {
             return false;
         }
 

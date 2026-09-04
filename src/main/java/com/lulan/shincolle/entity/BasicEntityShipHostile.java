@@ -8,7 +8,7 @@ import com.lulan.shincolle.init.ModEntities;
 import com.lulan.shincolle.init.ModSounds;
 import com.lulan.shincolle.network.ModNetworking;
 import com.lulan.shincolle.network.S2CEntitySyncPacket;
-import com.lulan.shincolle.network.S2CSpawnParticlePacket;
+import com.lulan.shincolle.network.S2CSpawnParticle;
 import com.lulan.shincolle.reference.ID;
 import com.lulan.shincolle.reference.unitclass.Attrs;
 import com.lulan.shincolle.reference.unitclass.AttrsAdv;
@@ -53,8 +53,6 @@ public abstract class BasicEntityShipHostile extends Mob
     // ========== Fields ==========
 
     protected ShipNavigation shipNavigator;
-    protected LivingEntity aiTarget;
-    protected Entity atkTarget;
     protected Entity rvgTarget;
     // AI calculation
     protected double ShipDepth;
@@ -174,7 +172,7 @@ public abstract class BasicEntityShipHostile extends Mob
     // ========== Fields ==========
     @Override
     protected @NotNull ShipNavigation createNavigation(@NotNull Level level) {
-        return new ShipNavigation(this, level);
+        return new ShipNavigation(this, level, this.canFly());
     }
 
     // ========== Static Attribute Builder ==========
@@ -185,7 +183,7 @@ public abstract class BasicEntityShipHostile extends Mob
     protected void postInit() {
         this.shipNavigator = this.createNavigation(this.level());
         // [PORT] 1.10.2 -> 1.20.1: restore legacy hostile ship turn-rate cap.
-        this.moveControl = new ShipMoveControl(this, 60F, 1.5F);
+        this.moveControl = new ShipMoveControl(this, this.canFly(), 10F);
         this.shipAttrs = new AttrsAdv(this.getShipClass());
 
     }
@@ -798,12 +796,8 @@ public abstract class BasicEntityShipHostile extends Mob
     }
 
     public void applyParticleEmotion(int type) {
-        float h = this.getBbHeight() * 0.6F;
-
         if (!this.level().isClientSide()) {
-            S2CSpawnParticlePacket packet = new S2CSpawnParticlePacket(
-                    (byte) 36, this.getId(),
-                    new byte[]{(byte) (((int) (h * 100)) >> 8), (byte) ((int) (h * 100) & 0xFF), 0, (byte) type});
+            S2CSpawnParticle packet = new S2CSpawnParticle(this, type, false);  // Entity_Animateで十分
             ModNetworking.sendToAllTracking(packet, this);
         } else {
             ParticleHelper.spawnEmotionParticle(this, type);

@@ -348,6 +348,20 @@ public class C2SGUIInputPacket {
         return null;
     }
 
+    private static void setSingleSelection(CapaTeitoku capa, int teamId, int slot) {
+        capa.clearSelectState(teamId);
+        capa.setSelectState(teamId, slot, true);
+    }
+
+    private static int findFirstLiveShipSlot(ServerLevel level, CapaTeitoku capa, int teamId) {
+        for (int i = 0; i < CapaTeitoku.SLOT_NUM; i++) {
+            if (resolveTeamShip(level, capa, teamId, i) != null) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     /**
      * Encode
      */
@@ -567,16 +581,17 @@ public class C2SGUIInputPacket {
         int clickedUid = clickedShip.getStateMinor(ID.M.ShipUID);
         boolean inTeam = findTeamSlotByUID(capa, teamId, clickedUid) >= 0;
 
-        if (!inTeam || mode == 0) {
+        if (!inTeam) {
             // Not in team or single mode: toggle only the clicked ship
             boolean newSit = !clickedShip.isOrderedToSit();
             clickedShip.setEntitySit(newSit);
             clickedShip.setRiderAndMountSit();
         } else {
-            // Group/formation mode: toggle all ships in the team
-            // Use the first team ship's state to decide toggle direction
             boolean newSit = !clickedShip.isOrderedToSit();
             for (int i = 0; i < CapaTeitoku.SLOT_NUM; i++) {
+                if (!shouldApplyPointerMode(capa, teamId, i, mode)) {
+                    continue;
+                }
                 BasicEntityShip ship = resolveTeamShip(level, capa, teamId, i);
                 if (ship != null) {
                     ship.setEntitySit(newSit);
@@ -655,14 +670,17 @@ public class C2SGUIInputPacket {
     }
 
     /**
-     * Order all ships in the selected team to attack a target entity.
-     * values: 0:player eid, 1:(unused dim), 2:target entity id
+     * Order selected ships in the current team to attack a target entity.
+     * legacy pointer values: 0:player eid, 1:(unused dim), 2:mode, 3:target entity id
+     * old port values: 0:player eid, 1:(unused dim), 2:target entity id
      */
     private void handleAttackTarget(ServerPlayer player) {
         if (values.length < 3)
             return;
         ServerLevel level = player.serverLevel();
-        Entity target = level.getEntity(values[2]);
+        int mode = values.length >= 4 ? values[2] : 2;
+        int targetId = values.length >= 4 ? values[3] : values[2];
+        Entity target = level.getEntity(targetId);
         if (target == null)
             return;
         if (TargetHelper.isEntityInvulnerable(target)
@@ -675,6 +693,9 @@ public class C2SGUIInputPacket {
 
         int teamId = capa.getSelectTeam();
         for (int i = 0; i < CapaTeitoku.SLOT_NUM; i++) {
+            if (!shouldApplyPointerMode(capa, teamId, i, mode)) {
+                continue;
+            }
             BasicEntityShip ship = resolveTeamShip(level, capa, teamId, i);
             if (ship != null) {
                 if (ship.getStateFlag(ID.F.NoFuel))
@@ -688,20 +709,26 @@ public class C2SGUIInputPacket {
     }
 
     /**
-     * Order all ships in the selected team to guard a target entity.
-     * values: 0:player eid, 1:(unused dim), 2:target entity id
+     * Order selected ships in the current team to guard a target entity.
+     * legacy pointer values: 0:player eid, 1:(unused dim), 2:mode, 3:guardType, 4:target entity id
+     * old port values: 0:player eid, 1:(unused dim), 2:target entity id
      */
     private void handleGuardEntity(ServerPlayer player) {
         if (values.length < 3)
             return;
         ServerLevel level = player.serverLevel();
-        Entity target = level.getEntity(values[2]);
+        int mode = values.length >= 5 ? values[2] : 2;
+        int targetId = values.length >= 5 ? values[4] : values[2];
+        Entity target = level.getEntity(targetId);
         if (target == null)
             return;
         CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
 
         int teamId = capa.getSelectTeam();
         for (int i = 0; i < CapaTeitoku.SLOT_NUM; i++) {
+            if (!shouldApplyPointerMode(capa, teamId, i, mode)) {
+                continue;
+            }
             BasicEntityShip ship = resolveTeamShip(level, capa, teamId, i);
             if (ship != null) {
                 if (ship.getStateFlag(ID.F.NoFuel))
@@ -749,8 +776,7 @@ public class C2SGUIInputPacket {
     }
 
     /**
-     * Order all ships in the selected team to start moving (unsit) and set guard
-     * position.
+     * Order selected ships in the current team to start moving and set guard position.
      * values: 0:player eid, 1:(unused dim), 2:mode, 3:guardType, 4:x, 5:y, 6:z
      */
     private void handleSetMove(ServerPlayer player) {
@@ -760,31 +786,53 @@ public class C2SGUIInputPacket {
 
         ServerLevel level = player.serverLevel();
         int teamId = capa.getSelectTeam();
+        int mode = values[2];
+        int guardType = values[3];
         int gx = values[4];
         int gy = values[5];
         int gz = values[6];
         for (int i = 0; i < CapaTeitoku.SLOT_NUM; i++) {
+            if (!shouldApplyPointerMode(capa, teamId, i, mode)) {
+                continue;
+            }
             BasicEntityShip ship = resolveTeamShip(level, capa, teamId, i);
             if (ship != null) {
                 if (ship.getStateFlag(ID.F.NoFuel))
                     continue;
                 FormationHelper.applyShipGuard(ship, gx, gy, gz, false);
+                ship.setStateMinor(ID.M.GuardType, guardType);
                 ship.sendSyncPacketGuard();
             }
         }
     }
 
     /**
-     * Select a team by index.
-     * values: 0:player eid, 1:(unused dim), 2:team index
+     * Select a team by index, or update pointer focus.
+     * team switch values: 0:player eid, 1:(unused dim), 2:team index
+     * pointer focus values: 0:player eid, 1:(unused dim), 2:mode, 3:ship uid
      */
     private void handleSetSelect(ServerPlayer player) {
         if (values.length < 3)
             return;
         CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
 
-        capa.setSelectTeam(values[2]);
-        ModNetworking.sendToPlayer(S2CGUISyncPacket.syncShipsInTeam(capa, values[2]), player);
+        if (values.length >= 4) {
+            int teamId = capa.getSelectTeam();
+            int slot = findTeamSlotByUID(capa, teamId, values[3]);
+            if (slot >= 0) {
+                if (values[2] == 0) {
+                    setSingleSelection(capa, teamId, slot);
+                } else if (values[2] == 1) {
+                    capa.setSelectState(teamId, slot, !capa.getSelectStateCurrentTeam(slot));
+                }
+            }
+            ModNetworking.sendToPlayer(S2CGUISyncPacket.syncShipsInTeam(capa, teamId), player);
+            return;
+        }
+
+        int teamId = values[2];
+        capa.setSelectTeam(teamId);
+        ModNetworking.sendToPlayer(S2CGUISyncPacket.syncShipsInTeam(capa, teamId), player);
     }
 
     /**
@@ -887,11 +935,33 @@ public class C2SGUIInputPacket {
     }
 
     /**
-     * Sync selected player item between client and server.
-     * Vanilla handles item sync, so this is a no-op.
+     * Sync selected pointer mode and keep single mode focused on one ship.
      */
     private void handleSyncPlayerItem(ServerPlayer player) {
-        // Item sync is handled by vanilla; no server action needed
+        if (values.length < 3) {
+            return;
+        }
+
+        CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
+        if (capa == null || values[2] != 0) {
+            return;
+        }
+
+        int teamId = capa.getSelectTeam();
+        int slot = findFirstLiveShipSlot(player.serverLevel(), capa, teamId);
+        if (slot >= 0) {
+            setSingleSelection(capa, teamId, slot);
+            ModNetworking.sendToPlayer(S2CGUISyncPacket.syncShipsInTeam(capa, teamId), player);
+        }
+    }
+
+    private boolean shouldApplyPointerMode(CapaTeitoku capa, int teamId, int slot, int mode) {
+        return switch (mode) {
+            case 0 -> capa.getSelectStateCurrentTeam(slot);
+            case 1 -> capa.getSelectStateCurrentTeam(slot);
+            case 2 -> true;
+            default -> false;
+        };
     }
 
     /**

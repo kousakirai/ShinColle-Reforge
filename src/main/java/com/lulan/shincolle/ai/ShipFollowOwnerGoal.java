@@ -7,6 +7,7 @@ import com.lulan.shincolle.server.ServerDataManager;
 import com.lulan.shincolle.utility.DebugProfiler;
 import com.lulan.shincolle.utility.FormationHelper;
 import com.lulan.shincolle.utility.LogHelper;
+import com.lulan.shincolle.utility.ParticleHelper;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.entity.LivingEntity;
@@ -143,17 +144,16 @@ public class ShipFollowOwnerGoal extends Goal {
             this.checkTP_T++;
 
             // update follow range every 32 ticks
-            if (hostEntity.tickCount % 32 == 0) {
-                LivingEntity ownerEntity = resolveOwner();
-                if (ownerEntity != null) {
-                    this.owner = ownerEntity;
-                    updateDistance();
-                } else {
-                    DebugProfiler.count(profiler, "shincolle.ai.follow_owner.tick.owner_lost");
-                    this.stop();
-                    return;
-                }
+            LivingEntity ownerEntity = resolveOwner();
+            if (ownerEntity != null) {
+                this.owner = ownerEntity;
+                updateDistance();
+            } else {
+                DebugProfiler.count(profiler, "shincolle.ai.follow_owner.tick.owner_lost");
+                this.stop();
+                return;
             }
+
 
             // reached min distance, stop
             if (this.distSq <= this.minDistSq) {
@@ -209,6 +209,9 @@ public class ShipFollowOwnerGoal extends Goal {
      */
     private void updateDistance() {
         // formation mode
+        if (owner == null) {
+            return;
+        }
         if (host.getStateMinor(ID.M.FormatType) > 0) {
             this.minDistSq = 4D;
             this.maxDistSq = 7D;
@@ -233,21 +236,19 @@ public class ShipFollowOwnerGoal extends Goal {
                             player.getMainHandItem().getItem() instanceof com.lulan.shincolle.item.PointerItem ||
                             player.getOffhandItem().getItem() instanceof com.lulan.shincolle.item.PointerItem;
                     if (showPart) {
-                        com.lulan.shincolle.utility.ParticleHelper.spawnTeamCircleAtPlayer(player, pos[0], pos[1], pos[2], 4);
+                        ParticleHelper.spawnTeamCircleAtPlayer(player, pos[0], pos[1], pos[2], 4);
                     }
                 }
             }
 
-            if (this.hostEntity.tickCount % 16 == 0) {
                 if (owner instanceof ServerPlayer player) {
                     boolean showPart = com.lulan.shincolle.handler.ConfigHandler.alwaysShowTeamCircle() ||
                             player.getMainHandItem().getItem() instanceof com.lulan.shincolle.item.PointerItem ||
                             player.getOffhandItem().getItem() instanceof com.lulan.shincolle.item.PointerItem;
                     if (showPart) {
-                        com.lulan.shincolle.utility.ParticleHelper.spawnTeamCircleAtPlayer(player, pos[0], pos[1], pos[2], 6);
+                        ParticleHelper.spawnTeamCircleAtPlayer(player, pos[0], pos[1], pos[2], 6);
                     }
                 }
-            }
 
             if (host.getStateFlag(ID.F.PickItem))
                 this.maxDistSq = 16D;

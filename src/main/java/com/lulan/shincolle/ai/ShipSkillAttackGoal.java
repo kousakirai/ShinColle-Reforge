@@ -59,6 +59,6 @@ public class ShipSkillAttackGoal extends Goal {
 
     @Override
     public void tick() {
-        this.host.updateSkillAttack(this.host.getEntityTarget());
+        this.host.updateSkillAttack(this.entity.getTarget());
     }
 }

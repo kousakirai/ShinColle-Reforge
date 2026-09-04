@@ -25,6 +25,8 @@ import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
+import java.util.Optional;
+
 /**
  * Server-side event handler for ShinColle.
  * <p>
@@ -86,9 +88,11 @@ public class ServerEventHandler {
         }
 
         CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
-
         // [PORT] 1.10.2 -> 1.20.1: keep ring possession tracking used by ring-gated
         // systems (spawn, movement buffs).
+        if (capa == null) {
+            return;
+        }
         if ((player.tickCount & 15) == 0) {
             updateRingState(player, capa);
         }
@@ -107,9 +111,7 @@ public class ServerEventHandler {
                 EntityHelper.spawnMobShip(player, capa);
             }
         }
-
         EntityHelper.spawnBossShip(player, capa);
-
         int teamCooldown = capa.getTeamCooldown();
         if (teamCooldown > 0) {
             capa.setTeamCooldown(teamCooldown - 1);

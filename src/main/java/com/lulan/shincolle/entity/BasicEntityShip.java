@@ -49,6 +49,7 @@ import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.ai.control.MoveControl;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.navigation.PathNavigation;
@@ -159,6 +160,7 @@ public abstract class BasicEntityShip extends TamableAnimal
     private boolean initAI, initWaitAI;
     private boolean isUpdated;
     private int updateTime = 16;
+
     protected BasicEntityShip(EntityType<? extends BasicEntityShip> type, Level level) {
         super(type, level);
         this.noCulling = true;
@@ -205,7 +207,7 @@ public abstract class BasicEntityShip extends TamableAnimal
         this.ShipPrevY = getY();
         this.ShipPrevZ = getZ();
         this.setMaxUpStep(1.0F);
-        this.moveControl = new ShipMoveControl(this, 60F, 1.5F);
+        this.moveControl = this.createMoveControl();
 
         // render
         this.rotateAngle = new float[3];
@@ -234,11 +236,14 @@ public abstract class BasicEntityShip extends TamableAnimal
     }
 
     @Override
-    protected @NotNull PathNavigation createNavigation(@NotNull Level level) {
+    protected @NotNull ShipNavigation createNavigation(@NotNull Level level) {
         System.out.println("ShipNavigation created");
-        return new ShipNavigation(this, level);
+        return new ShipNavigation(this, level, this.canFly());
     }
 
+    public ShipMoveControl createMoveControl() {
+        return new ShipMoveControl(this, this.canFly(), 10F); // rotateLimitは用途に応じて調整
+    }
     // ========== Static Attribute Builder (1.20.1) ==========
 
     /**
@@ -639,25 +644,23 @@ public abstract class BasicEntityShip extends TamableAnimal
             if (ConfigHandler.canTimekeeping() && this.getStateFlag(ID.F.TimeKeeper) && this.isAlive()) {
                 playTimeSound();
             }
-
+            // reset AI and sync once
+            if (!this.initAI && tickCount > 10) {
+                setStateFlag(ID.F.CanDrop, true);
+                // check fuel state first (sets NoFuel flag but won't clear
+                // goals since none are registered yet)
+                decrGrudgeNum(0);
+                // then register goals — they stay registered because
+                // updateFuelStateByAITaskPresence already ran with empty selectors
+                clearAITasks();
+                clearAITargetTasks();
+                setAIList();
+                setAITargetList();
+                updateChunkLoader();
+                this.initAI = true;
+            }
             // check every 8 ticks
             if ((tickCount & 7) == 0) {
-                // reset AI and sync once
-                if (!this.initAI && tickCount > 10) {
-                    setStateFlag(ID.F.CanDrop, true);
-                    // check fuel state first (sets NoFuel flag but won't clear
-                    // goals since none are registered yet)
-                    decrGrudgeNum(0);
-                    // then register goals — they stay registered because
-                    // updateFuelStateByAITaskPresence already ran with empty selectors
-                    clearAITasks();
-                    clearAITargetTasks();
-                    setAIList();
-                    setAITargetList();
-                    updateChunkLoader();
-                    this.initAI = true;
-                }
-
                 // formation buff fast update: recalc when flag is set
                 if (this.getUpdateFlag(ID.FlagUpdate.FormationBuff)) {
                     this.calcShipAttributes(16, true);
@@ -1499,7 +1502,6 @@ public abstract class BasicEntityShip extends TamableAnimal
                 clearAITasks();
                 clearAITargetTasks();
                 this.setTarget(null);
-                this.setEntityTarget(null);
                 if (this.getVehicle() instanceof BasicEntityMount mount) {
                     mount.clearAITasks();
                 }
@@ -1832,7 +1834,7 @@ public abstract class BasicEntityShip extends TamableAnimal
     public void applyParticleAtAttacker(int type, Entity target, Entity target2) {
         if (target != null && !this.level().isClientSide()) {
             ModNetworking.sendToAllTracking(
-                    new S2CSpawnParticlePacket((byte) type, this.getId(), null),
+                    new S2CSpawnParticle(this, (byte) type, false),
                     this);
         }
     }
@@ -2348,12 +2350,12 @@ public abstract class BasicEntityShip extends TamableAnimal
 
     @Override
     public Entity getEntityRevengeTarget() {
-        return this.rvgTarget;
+        return this.getTarget();
     }
 
     @Override
     public void setEntityRevengeTarget(Entity target) {
-        this.rvgTarget = target;
+        this.setTarget((LivingEntity) target);
     }
 
     @Override
@@ -3119,11 +3121,11 @@ public abstract class BasicEntityShip extends TamableAnimal
             if ((this.tickCount & 3) == 0) {
                 double range = this.getBbWidth() * 1.2D;
                 for (int i = 0; i < 5; i++) {
-                    ParticleHelper.spawnAttackParticleAt(this.level(),
+                    ParticleHelper.spawnAttackParticleAt(
                             this.getX() - range + this.random.nextDouble() * range * 2D,
                             this.getY() + 0.1D + this.random.nextDouble() * 0.3D,
                             this.getZ() - range + this.random.nextDouble() * range * 2D,
-                            1.5D, 0D, 0D, 43);
+                            1.5D, 0D, 0D, (byte) 43);
                 }
             }
         }
@@ -3194,7 +3196,7 @@ public abstract class BasicEntityShip extends TamableAnimal
         if (!this.level().isClientSide()) {
             // apply heal particle
             ModNetworking.sendToAllTracking(
-                    new S2CSpawnParticlePacket((byte) 23, this.getId(), null), this);
+                    new S2CSpawnParticle(this, (byte) 23,false), this);
         }
 
         // apply HPRES buff multiplier
@@ -3666,9 +3668,7 @@ public abstract class BasicEntityShip extends TamableAnimal
 
         if (!this.level().isClientSide()) {
             ModNetworking.sendToAllTracking(
-                    new S2CSpawnParticlePacket((byte) 36, this.getId(),
-                            new byte[]{(byte) (((int) (h * 100)) >> 8), (byte) ((int) (h * 100) & 0xFF),
-                                    0, (byte) type}),
+                    new S2CSpawnParticle(this, (byte) 36, h, type, 0),
                     this);
         } else {
             ParticleHelper.spawnEmotionParticle(this, type);

@@ -54,10 +54,10 @@ public class ModNetworking {
                 .consumerMainThread(S2CEntitySyncPacket::handle)
                 .add();
 
-        CHANNEL.messageBuilder(S2CSpawnParticlePacket.class, nextId(), NetworkDirection.PLAY_TO_CLIENT)
-                .encoder(S2CSpawnParticlePacket::encode)
-                .decoder(S2CSpawnParticlePacket::new)
-                .consumerMainThread(S2CSpawnParticlePacket::handle)
+        CHANNEL.messageBuilder(S2CSpawnParticle.class, nextId(), NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CSpawnParticle::encode)
+                .decoder(S2CSpawnParticle::decode)
+                .consumerMainThread(S2CSpawnParticle::handle)
                 .add();
 
         CHANNEL.messageBuilder(S2CGUISyncPacket.class, nextId(), NetworkDirection.PLAY_TO_CLIENT)

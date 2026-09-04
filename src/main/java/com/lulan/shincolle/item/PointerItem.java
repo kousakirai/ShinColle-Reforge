@@ -236,7 +236,7 @@ public class PointerItem extends BasicItem {
                                     if (j != teamSlot && capa.getTeamSID(teamId, j) > 0) {
                                         ModNetworking.sendToServer(new C2SGUIInputPacket(
                                                 C2SGUIInputPacket.SetSelect,
-                                                new int[]{player.getId(), 0, teamId}));
+                                                new int[]{player.getId(), 0, mode, capa.getTeamMember(teamId, j)}));
                                         break;
                                     }
                                 }
@@ -252,7 +252,7 @@ public class PointerItem extends BasicItem {
                             // Already in team: set focus
                             ModNetworking.sendToServer(new C2SGUIInputPacket(
                                     C2SGUIInputPacket.SetSelect,
-                                    new int[]{player.getId(), 0, capa.getSelectTeam()}));
+                                    new int[]{player.getId(), 0, mode, ship.getStateMinor(ID.M.ShipUID)}));
                         } else {
                             // Not in team: add to team
                             ModNetworking.sendToServer(new C2SGUIInputPacket(
@@ -263,7 +263,7 @@ public class PointerItem extends BasicItem {
                             if (mode == MODE_SINGLE) {
                                 ModNetworking.sendToServer(new C2SGUIInputPacket(
                                         C2SGUIInputPacket.SetSelect,
-                                        new int[]{player.getId(), 0, capa.getSelectTeam()}));
+                                        new int[]{player.getId(), 0, mode, ship.getStateMinor(ID.M.ShipUID)}));
                             }
                         }
                         return true;
@@ -341,9 +341,9 @@ public class PointerItem extends BasicItem {
             if (isSprinting) {
                 ModNetworking.sendToServer(new C2SGUIInputPacket(
                         C2SGUIInputPacket.GuardEntity,
-                        new int[]{player.getId(), 0, hitEntity.getId()}));
-                ParticleHelper.spawnAttackParticleAt(player.level(), hitEntity.getX(), hitEntity.getY(),
-                        hitEntity.getZ(), 2);
+                        new int[]{player.getId(), 0, mode, 0, hitEntity.getId()}));
+                ParticleHelper.spawnAttackParticleAt(hitEntity.getX(), hitEntity.getY(),
+                        hitEntity.getZ(), (byte) 2);
                 return;
             }
 
@@ -380,9 +380,9 @@ public class PointerItem extends BasicItem {
                     // Non-player mob: attack
                     ModNetworking.sendToServer(new C2SGUIInputPacket(
                             C2SGUIInputPacket.AttackTarget,
-                            new int[]{player.getId(), 0, hitEntity.getId()}));
-                    ParticleHelper.spawnAttackParticleAt(player.level(), hitEntity.getX(), hitEntity.getY(),
-                            hitEntity.getZ(), 2);
+                            new int[]{player.getId(), 0, mode, hitEntity.getId()}));
+                    ParticleHelper.spawnAttackParticleAt(hitEntity.getX(), hitEntity.getY(),
+                            hitEntity.getZ(), (byte) 2);
                 }
             }
             return;
@@ -425,8 +425,8 @@ public class PointerItem extends BasicItem {
                     C2SGUIInputPacket.SetMove,
                     new int[]{player.getId(), 0, mode, guardType, x, y, z}));
 
-            ParticleHelper.spawnAttackParticleAt(player.level(), x + 0.5D, y, z + 0.5D,
-                    0.3D, markerTeamId, 0D, 25);
+            ParticleHelper.spawnAttackParticleAt(x + 0.5D, (double) y, z + 0.5D,
+                    0.3D, (double) markerTeamId, 0D, (byte) 25);
         }
     }
 
@@ -438,15 +438,15 @@ public class PointerItem extends BasicItem {
             // Attack target
             ModNetworking.sendToServer(new C2SGUIInputPacket(
                     C2SGUIInputPacket.AttackTarget,
-                    new int[]{player.getId(), 0, target.getId()}));
-            ParticleHelper.spawnAttackParticleAt(player.level(), target.getX(), target.getY(), target.getZ(), 2);
+                    new int[]{player.getId(), 0, mode, target.getId()}));
+            ParticleHelper.spawnAttackParticleAt(target.getX(), target.getY(), target.getZ(), (byte) 2);
         } else {
             // Move to target position (include target coordinates)
             ModNetworking.sendToServer(new C2SGUIInputPacket(
                     C2SGUIInputPacket.SetMove,
-                    new int[]{player.getId(), 0, mode, 0,
+                    new int[]{player.getId(), 0, mode, 1,
                             (int) target.getX(), (int) target.getY(), (int) target.getZ()}));
-            ParticleHelper.spawnAttackParticleAt(player.level(), target.getX(), target.getY(), target.getZ(), 2);
+            ParticleHelper.spawnAttackParticleAt(target.getX(), target.getY(), target.getZ(), (byte)2);
         }
     }
 

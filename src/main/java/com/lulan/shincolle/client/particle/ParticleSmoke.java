@@ -14,7 +14,19 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 @OnlyIn(Dist.CLIENT)
 public class ParticleSmoke extends TextureSheetParticle {
 
+    private static SpriteSet sharedSprites;
+
+    public static void setSharedSprites(SpriteSet sprites) {
+        sharedSprites = sprites;
+    }
+
     private final SpriteSet sprites;
+
+    // 旧来のコードから直接呼べるよう、sprites省略版のコンストラクタを追加
+    public ParticleSmoke(ClientLevel level, double x, double y, double z,
+                         double xSpeed, double ySpeed, double zSpeed, float scale) {
+        this(level, x, y, z, xSpeed, ySpeed, zSpeed, scale, sharedSprites);
+    }
 
     public ParticleSmoke(ClientLevel level, double x, double y, double z,
                          double xSpeed, double ySpeed, double zSpeed, float scale, SpriteSet sprites) {

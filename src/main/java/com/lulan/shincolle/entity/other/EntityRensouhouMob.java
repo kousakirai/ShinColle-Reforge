@@ -46,7 +46,7 @@ public class EntityRensouhouMob extends BasicEntitySummon {
 
             @Override
             public boolean canUse() {
-                Entity target = self.getEntityTarget();
+                LivingEntity target = self.getTarget();
                 return target != null && target.isAlive() && self.numAmmoLight > 0;
             }
 
@@ -57,7 +57,7 @@ public class EntityRensouhouMob extends BasicEntitySummon {
 
             @Override
             public void tick() {
-                Entity target = self.getEntityTarget();
+                LivingEntity target = self.getTarget();
                 if (target == null) return;
 
                 self.getLookControl().setLookAt(target, 30.0F, 30.0F);

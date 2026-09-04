@@ -46,8 +46,8 @@ public class EntityFloatingFort extends BasicEntityAirplane {
     public void tick() {
         if (this.level().isClientSide() && this.isAlive() && (this.tickCount & 1) == 0) {
             // 2026/04/07・哦itHub Copilot縺ｫ繧医▲縺ｦ遒ｺ隱肴ｸ医∩
-            ParticleHelper.spawnAttackParticleAt(this.level(), this.getX(), this.getY() + 0.2D, this.getZ(),
-                    -this.getDeltaMovement().x * 0.5D, 0.07D, -this.getDeltaMovement().z * 0.5D, 29);
+            ParticleHelper.spawnAttackParticleAt(this.getX(), this.getY() + 0.2D, this.getZ(),
+                    -this.getDeltaMovement().x * 0.5D, 0.07D, -this.getDeltaMovement().z * 0.5D, (byte) 29);
         }
 
         if (!this.level().isClientSide() && this.isAlive()) {

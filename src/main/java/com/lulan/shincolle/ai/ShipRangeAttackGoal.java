@@ -136,10 +136,13 @@ public class ShipRangeAttackGoal extends Goal {
                     return;
                 }
             }
-            System.out.println("onSightTime: " + this.onSightTime);
-            // stop moving if in range and has sight
-            if (distSq > this.rangeSq && !onSight) {
+            // Close the distance until the target is both in range and visible.
+            // The former condition required a lost line of sight as well, which
+            // left ships stationary when they could see a target beyond range.
+            if (distSq > this.rangeSq || !onSight) {
                 this.entity.getNavigation().moveTo(this.target, 1.0D);
+            } else {
+                this.entity.getNavigation().stop();
             }
 
             this.entity.getLookControl().setLookAt(this.target, 30.0F, 30.0F);

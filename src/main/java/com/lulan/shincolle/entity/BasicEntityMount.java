@@ -73,7 +73,7 @@ public abstract class BasicEntityMount extends TamableAnimal
      */
     @Override
     protected @NotNull ShipNavigation createNavigation(@NotNull Level level) {
-        return new ShipNavigation(this, level);
+        return new ShipNavigation(this, level, this.canFly());
     }
 
     // ========== Host Management ==========
@@ -230,7 +230,7 @@ public abstract class BasicEntityMount extends TamableAnimal
             public boolean canUse() {
                 if (self.host == null)
                     return false;
-                Entity hostTarget = self.getEntityTarget();
+                Entity hostTarget = self.getTarget();
                 if (hostTarget != null && hostTarget.isAlive()) {
                     this.target = hostTarget;
                     return true;

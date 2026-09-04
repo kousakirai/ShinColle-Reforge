@@ -25,7 +25,12 @@ public class ConfigHandler {
 
     public static final ForgeConfigSpec COMMON_SPEC;
     public static final Common COMMON;
+    // ConfigHandler.java 内、他のstaticキャッシュフィールドと並べて配置
+    /** デバッグ用: AI Goal名を頭上に表示するか（ワールド跨ぎで保存しない） */
+    public static boolean DEBUG_SHOW_AI_GOALS = false;
 
+    /** デバッグ用: Goalのstart/stopをログ出力するか（ワールド跨ぎで保存しない） */
+    public static boolean DEBUG_LOG_GOAL_LIFECYCLE = false;
     // ========== Cached values for backward compatibility ==========
     /**
      * Max ship level (not configurable)

@@ -57,16 +57,13 @@ public class EntityRensouhou extends BasicEntitySummon {
 
             @Override
             public void tick() {
-                Entity target = self.getEntityTarget();
+                LivingEntity target = self.getTarget();
                 if (target == null) return;
 
                 self.getLookControl().setLookAt(target, 30.0F, 30.0F);
 
-                // pathfind toward target every 10 ticks
-                if (--pathfindCooldown <= 0) {
-                    pathfindCooldown = 10;
-                    self.getNavigation().moveTo(target, 1.0D);
-                }
+
+                self.getNavigation().moveTo(target, 1.0D);
 
                 // attack when in range (5 blocks)
                 double distSq = self.distanceToSqr(target);

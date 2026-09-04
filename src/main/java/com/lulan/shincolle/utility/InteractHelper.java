@@ -11,7 +11,7 @@ import com.lulan.shincolle.item.IShipCombatRation;
 import com.lulan.shincolle.item.IShipFoodItem;
 import com.lulan.shincolle.item.OwnerPaper;
 import com.lulan.shincolle.network.ModNetworking;
-import com.lulan.shincolle.network.S2CSpawnParticlePacket;
+import com.lulan.shincolle.network.S2CSpawnParticle;
 import com.lulan.shincolle.reference.ID;
 import com.lulan.shincolle.reference.Values;
 import com.lulan.shincolle.server.ServerDataManager;
@@ -132,7 +132,7 @@ public class InteractHelper {
 
         // play hearts effect
         ModNetworking.sendToAllTracking(
-                new S2CSpawnParticlePacket((byte) 3, ship.getId(), new byte[0]), ship);
+                new S2CSpawnParticle(ship, (byte) 3, false), ship);
 
         // play marriage sound
         ship.playSound(ship.getCustomSound(4, ship), (float) ConfigHandler.volumeShip(), 1F);

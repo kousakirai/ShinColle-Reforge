@@ -16,5 +16,8 @@ public final class ShinColleGameTestRegistration {
     @SubscribeEvent
     public static void registerGameTests(RegisterGameTestsEvent event) {
         event.register(ShinColleEntityRegistryGameTests.class);
+        event.register(ShinColleShipStateGameTests.class);
+        event.register(ShinColleShipStateGameTests.class);
+
     }
 }

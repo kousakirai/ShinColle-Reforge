@@ -25,6 +25,7 @@ public class CommandHandler {
         ShipCmdShipInfo.register(event.getDispatcher());
         ShipCmdStopAI.register(event.getDispatcher());
         ShipCmdUpdateOwnerUID.register(event.getDispatcher());
+        ShipCmdDebugAI.register(event.getDispatcher());
 
         LogHelper.info("ShinColle: Commands registered.");
     }

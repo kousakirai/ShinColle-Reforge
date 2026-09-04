@@ -8,10 +8,7 @@ import com.lulan.shincolle.reference.unitclass.MissileData;
 import com.lulan.shincolle.utility.CombatHelper;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.level.Level;
@@ -94,21 +91,27 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
      */
     @Override
     public void travel(Vec3 travelVector) {
-        // apply movement with reduced speed for air
-        this.moveRelative(0.02F, travelVector);
-        this.move(net.minecraft.world.entity.MoverType.SELF, this.getDeltaMovement());
+        float moveSpeed = this.shipAttrs != null
+                ? this.shipAttrs.getMoveSpeed() * 0.4F
+                : 0.02F;
 
-        // apply friction
+        // 水平移動のみ moveRelative で処理
+        // Y方向は ShipMoveControl が deltaMovement に直接加算済みなので触らない
+        this.moveRelative(moveSpeed, new Vec3(travelVector.x, 0, travelVector.z));
+
+        this.move(MoverType.SELF, this.getDeltaMovement());
+
         Vec3 motion = this.getDeltaMovement();
-        this.setDeltaMovement(motion.x * 0.91D, motion.y * 0.91D, motion.z * 0.91D);
+        this.setDeltaMovement(
+                motion.x * 0.91D,
+                motion.y * 0.91D,
+                motion.z * 0.91D
+        );
 
-        // rise when colliding horizontally
         if (this.horizontalCollision) {
-            this.setDeltaMovement(
-                    this.getDeltaMovement().add(0, 0.2D, 0));
+            this.setDeltaMovement(this.getDeltaMovement().add(0, 0.2D, 0));
         }
 
-        // limb swing animation
         this.calculateEntityAnimation(false);
     }
 
@@ -143,6 +146,11 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
     public void tick() {
         // server side airplane logic (before super.tick which handles host/lifetime
         // checks)
+        if (this.tickCount % 20 == 0 && !this.level().isClientSide()) {
+            System.out.println("target=" + this.getTarget()
+                    + " backHome=" + this.backHome
+                    + " ammoL=" + this.numAmmoLight);
+        }
         if (!this.level().isClientSide()) {
             if (this.host != null && ((Entity) this.host).isAlive()) {
                 Entity hostEnt = (Entity) this.host;
@@ -152,42 +160,43 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
                     float dist = this.distanceTo(hostEnt);
 
                     if (dist > 2F + hostEnt.getBbHeight()) {
-                        // fly toward host every 16 ticks
-                        this.getNavigation().moveTo(
-                                hostEnt.getX(),
-                                hostEnt.getY() + hostEnt.getBbHeight() + 1D,
-                                hostEnt.getZ(), 1D);
-                        // host is too far away - just despawn
-                        if (this.getNavigation().isDone()
-                                && this.distanceToSqr(hostEnt) >= 4095F) {
+                        // 毎tickではなく間隔を空けて moveTo
+                        if (this.tickCount % 10 == 0) {
+                            this.getNavigation().moveTo(
+                                    hostEnt.getX(),
+                                    hostEnt.getY() + hostEnt.getBbHeight() + 1D,
+                                    hostEnt.getZ(), 1D);
+                        }
+
+                        // isDone() チェックは moveTo の次tickから意味を持つ
+                        if (this.distanceToSqr(hostEnt) >= 4095F * 4095F) { // sqrなので注意
                             this.returnSummonResource();
                             this.discard();
                             return;
                         }
                     } else {
-                        // reached home - return resources and despawn
                         this.returnSummonResource();
                         this.discard();
                         return;
                     }
                 }
 
-                // initial straight-line movement toward target
-                if (this.tickCount < 34 && this.getTarget() != null) {
-                    double distX = this.getTarget().getX() - this.getX();
-                    double distZ = this.getTarget().getZ() - this.getZ();
-                    double distSqrt = Math.sqrt(distX * distX + distZ * distZ);
-
-                    if (distSqrt > 0.01D) {
-                        this.setDeltaMovement(
-                                distX / distSqrt * 0.375D,
-                                0.1D,
-                                distZ / distSqrt * 0.375D);
-                    }
-                }
+//                // initial straight-line movement toward target
+//                if (this.tickCount < 34 && this.getTarget() != null) {
+//                    double distX = this.getTarget().getX() - this.getX();
+//                    double distZ = this.getTarget().getZ() - this.getZ();
+//                    double distSqrt = Math.sqrt(distX * distX + distZ * distZ);
+//
+//                    if (distSqrt > 0.01D) {
+//                        this.setDeltaMovement(
+//                                distX / distSqrt * 0.375D,
+//                                0.1D,
+//                                distZ / distSqrt * 0.375D);
+//                    }
+//                }
 
                 // target finding every 16 ticks
-                if (this.tickCount % 16 == 0 && this.canFindTarget() && !this.backHome) {
+                if (this.canFindTarget() && !this.backHome) {
                     boolean findNewTarget = false;
 
                     if (this.tickCount < 1200) {
@@ -196,7 +205,7 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
                         }
                     }
 
-                    if (this.tickCount >= 20 && findNewTarget) {
+                    if (findNewTarget) {
                         Entity newTarget = findNearbyTarget();
 
                         if (newTarget == null && this.host != null) {
@@ -439,8 +448,6 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
         this.host = ship;
         this.setTarget((LivingEntity) target);
         this.setScaleLevel(scaleLevel);
-
-        // set spawn position
         this.setPos(ship.getX(), launchY, ship.getZ());
 
         // copy and modify attrs from host ship
@@ -467,9 +474,9 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
 
         applyInitAttrs();
 
-        // setup navigator and AI
+        // navigation → moveControl → AI の順で設定
         this.navigation = this.createNavigation(this.level());
-        this.moveControl = new ShipMoveControl(this, 60F, 1.5F);
+        this.moveControl = new ShipMoveControl(this, this.canFly(), 10F);
         this.setAIList();
     }
 
@@ -507,7 +514,7 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
         applyInitAttrs();
 
         this.navigation = this.createNavigation(this.level());
-        this.moveControl = new ShipMoveControl(this, 36F, 1.5F);
+        this.moveControl = new ShipMoveControl(this, this.canFly(), 10F);
         this.setAIList();
     }
 
