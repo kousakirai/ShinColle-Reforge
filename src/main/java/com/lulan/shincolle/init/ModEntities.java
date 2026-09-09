@@ -705,7 +705,7 @@ public class ModEntities {
                     .sized(0.8F, 0.8F)
                     .fireImmune()
                     .clientTrackingRange(64)
-                    .updateInterval(1)
+                    .updateInterval(4)
                     .build("basic_entity_item"));
 
     // ========== Attribute Registration ==========

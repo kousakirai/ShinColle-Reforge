@@ -127,10 +127,3 @@ publishing {
         }
     }
 }
-
-apply plugin: 'checkstyle'
-
-checkstyle {
-    toolVersion = '10.18.1'
-    configFile = file('config/checkstyle/checkstyle.xml')
-}

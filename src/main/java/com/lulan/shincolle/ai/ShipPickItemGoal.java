@@ -37,13 +37,6 @@ public class ShipPickItemGoal extends Goal {
 
     @Override
     public boolean canUse() {
-        AABB box = this.ship.getBoundingBox().inflate(this.pickRange, this.pickRange * 0.5F + 1.0F, this.pickRange * 1.2F);
-        List<ItemEntity> items = this.ship.level().getEntitiesOfClass(ItemEntity.class, box);
-
-        if (items.isEmpty()) {
-            return false;
-        }
-
         // sitting, riding, disabled, no fuel, crane state active: skip
         // check Flag PickItem
         if (this.ship.isPassenger() || this.ship.isOrderedToSit() ||

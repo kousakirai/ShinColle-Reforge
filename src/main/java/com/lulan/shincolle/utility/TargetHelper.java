@@ -395,13 +395,8 @@ public class TargetHelper {
                 return true;
             }
 
-            // IShipOwner entities (summons, etc.): attack if not ally
-            if (target instanceof IShipOwner) {
-                return !checkIsAlly(host, target);
-            }
-
-            // catch-all: attack any non-owner entity (original 1.10.2 behavior)
-            return !TeamHelper.checkSameOwner(host, target);
+            // Explicit custom targets are the final canonical target class.
+            return checkAttackTargetList(host, target);
         }
     }
 

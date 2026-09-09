@@ -3,7 +3,11 @@ package com.lulan.shincolle.network;
 import com.lulan.shincolle.capability.CapaTeitoku;
 import com.lulan.shincolle.capability.CapaTeitokuProvider;
 import com.lulan.shincolle.client.gui.inventory.ContainerFormation;
+import com.lulan.shincolle.client.gui.inventory.ContainerCrane;
+import com.lulan.shincolle.client.gui.inventory.ContainerLargeShipyard;
 import com.lulan.shincolle.client.gui.inventory.ContainerShipInventory;
+import com.lulan.shincolle.client.gui.inventory.ContainerSmallShipyard;
+import com.lulan.shincolle.client.gui.inventory.ContainerVolCore;
 import com.lulan.shincolle.entity.BasicEntityShip;
 import com.lulan.shincolle.reference.ID;
 import com.lulan.shincolle.server.ServerDataManager;
@@ -21,6 +25,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraftforge.network.NetworkEvent;
 import net.minecraftforge.network.NetworkHooks;
 
@@ -35,6 +41,9 @@ import java.util.function.Supplier;
  * Ported from 1.10.2 C2SGUIPackets.
  */
 public class C2SGUIInputPacket {
+    private static final int MAX_VALUES = 16;
+    private static final int MAX_STRING_CHARS = 256;
+
     // simple GUI button clicks
     public static final byte ShipBtn = 0;
 
@@ -93,8 +102,8 @@ public class C2SGUIInputPacket {
      */
     public C2SGUIInputPacket(FriendlyByteBuf buf) {
         this.type = buf.readByte();
-        this.values = PacketHelper.readIntArray(buf);
-        this.stringData = PacketHelper.readNullableString(buf);
+        this.values = PacketHelper.readIntArray(buf, MAX_VALUES);
+        this.stringData = PacketHelper.readNullableString(buf, MAX_STRING_CHARS);
     }
 
     private static void handleSmallShipyardBtn(TileEntitySmallShipyard tile, int buttonId, int value) {
@@ -281,6 +290,73 @@ public class C2SGUIInputPacket {
                 }
                 break;
         }
+    }
+
+    private static boolean isOwnedShip(ServerPlayer player, BasicEntityShip ship) {
+        return ship != null && ship.isAlive()
+                && (TeamHelper.checkSameOwner(player, ship) || ship.isOwnedBy(player));
+    }
+
+    private static boolean isWithinShipInteractionRange(ServerPlayer player, BasicEntityShip ship) {
+        return player.distanceToSqr(ship) < 64.0D;
+    }
+
+    private static boolean hasOpenShipMenu(ServerPlayer player, BasicEntityShip ship) {
+        return player.containerMenu instanceof ContainerShipInventory menu
+                && menu.getShip() == ship && menu.stillValid(player);
+    }
+
+    private static boolean hasOpenTileMenu(ServerPlayer player, BlockEntity tile) {
+        AbstractContainerMenu menu = player.containerMenu;
+        if (tile instanceof TileEntitySmallShipyard small) {
+            return menu instanceof ContainerSmallShipyard shipyard
+                    && shipyard.getTile() == small && shipyard.stillValid(player);
+        }
+        if (tile instanceof TileMultiGrudgeHeavy large) {
+            return menu instanceof ContainerLargeShipyard shipyard
+                    && shipyard.getTile() == large && shipyard.stillValid(player);
+        }
+        if (tile instanceof TileEntityCrane crane) {
+            return menu instanceof ContainerCrane craneMenu
+                    && craneMenu.getTile() == crane && craneMenu.stillValid(player);
+        }
+        if (tile instanceof TileEntityVolCore volCore) {
+            return menu instanceof ContainerVolCore coreMenu
+                    && coreMenu.getTile() == volCore && coreMenu.stillValid(player);
+        }
+        return false;
+    }
+
+    private static boolean isBinary(int value) {
+        return value == 0 || value == 1;
+    }
+
+    private static boolean isValidShipGUIButtonValue(BasicEntityShip ship, int button, int value) {
+        return switch (button) {
+            case ID.B.ShipInv_Melee, ID.B.ShipInv_AmmoLight, ID.B.ShipInv_AmmoHeavy,
+                    ID.B.ShipInv_AirLight, ID.B.ShipInv_AirHeavy, ID.B.ShipInv_TarAI,
+                    ID.B.ShipInv_AuraEffect, ID.B.ShipInv_OnSightAI, ID.B.ShipInv_PVPAI,
+                    ID.B.ShipInv_AAAI, ID.B.ShipInv_ASMAI, ID.B.ShipInv_TIMEKEEPAI,
+                    ID.B.ShipInv_PickitemAI, ID.B.ShipInv_ShowHeld, ID.B.ShipInv_AutoPump,
+                    ID.B.ShipInv_NoFuel -> isBinary(value);
+            case ID.B.ShipInv_FollowMin -> value >= 1 && value <= 31;
+            case ID.B.ShipInv_FollowMax -> value >= 2 && value <= 32;
+            case ID.B.ShipInv_FleeHP -> value >= 0 && value <= 100;
+            case ID.B.ShipInv_InvPage -> value >= 0 && value < ContainerShipInventory.INV_PAGES;
+            case ID.B.ShipInv_WpStay -> value >= 0 && value <= 16;
+            case ID.B.ShipInv_AutoCR -> value >= 1 && value <= 4;
+            case ID.B.ShipInv_Task -> value >= 0 && value <= 4;
+            case ID.B.ShipInv_TaskSide -> value >= 0 && (value & ~0x1FFFFF) == 0;
+            default -> {
+                if (button < ID.B.ShipInv_ModelState01 || button > ID.B.ShipInv_ModelState16) {
+                    yield false;
+                }
+                int stateCount = Math.min(16, Math.max(0, ship.getStateMinor(ID.M.NumState)));
+                int stateIndex = button - ID.B.ShipInv_ModelState01;
+                int allowedMask = stateCount == 16 ? 0xFFFF : (1 << stateCount) - 1;
+                yield stateIndex < stateCount && value >= 0 && (value & ~allowedMask) == 0;
+            }
+        };
     }
 
     private static void syncDeskTeamData(ServerPlayer player, CapaTeitoku capa) {
@@ -491,7 +567,9 @@ public class C2SGUIInputPacket {
         ServerLevel level = player.serverLevel();
         Entity entity = level.getEntity(values[0]);
 
-        if (entity instanceof BasicEntityShip ship) {
+        if (entity instanceof BasicEntityShip ship && isOwnedShip(player, ship)
+                && hasOpenShipMenu(player, ship)
+                && isValidShipGUIButtonValue(ship, values[2], values[3])) {
             applyShipGUIButton(ship, values[2], values[3]);
             if (values[2] == ID.B.ShipInv_InvPage
                     && player.containerMenu instanceof ContainerShipInventory menu
@@ -514,8 +592,8 @@ public class C2SGUIInputPacket {
         if (player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > 64.0)
             return;
 
-        net.minecraft.world.level.block.entity.BlockEntity be = player.serverLevel().getBlockEntity(pos);
-        if (be == null)
+        BlockEntity be = player.serverLevel().getBlockEntity(pos);
+        if (be == null || !hasOpenTileMenu(player, be))
             return;
 
         int buttonId = values[4];
@@ -543,7 +621,8 @@ public class C2SGUIInputPacket {
         ServerLevel level = player.serverLevel();
         Entity entity = level.getEntity(values[2]);
 
-        if (entity instanceof BasicEntityShip ship) {
+        if (entity instanceof BasicEntityShip ship && isOwnedShip(player, ship)
+                && isWithinShipInteractionRange(player, ship)) {
             ship.openGUI(player);
         }
     }
@@ -593,7 +672,7 @@ public class C2SGUIInputPacket {
                     continue;
                 }
                 BasicEntityShip ship = resolveTeamShip(level, capa, teamId, i);
-                if (ship != null) {
+                if (ship != null && isOwnedShip(player, ship)) {
                     ship.setEntitySit(newSit);
                     ship.setRiderAndMountSit();
                 }
@@ -612,9 +691,10 @@ public class C2SGUIInputPacket {
         ServerLevel level = player.serverLevel();
         Entity entity = level.getEntity(values[2]);
 
-        if (entity instanceof BasicEntityShip ship) {
-            ship.setStateMinor(ID.M.HitHeight, values[3]);
-            ship.setStateMinor(ID.M.HitAngle, values[4]);
+        if (entity instanceof BasicEntityShip ship && isOwnedShip(player, ship)
+                && isWithinShipInteractionRange(player, ship)) {
+            ship.setStateMinor(ID.M.HitHeight, Math.max(0, Math.min(values[3], 100)));
+            ship.setStateMinor(ID.M.HitAngle, Math.floorMod(values[4], 360));
         }
     }
 
@@ -697,7 +777,7 @@ public class C2SGUIInputPacket {
                 continue;
             }
             BasicEntityShip ship = resolveTeamShip(level, capa, teamId, i);
-            if (ship != null) {
+            if (ship != null && isOwnedShip(player, ship)) {
                 if (ship.getStateFlag(ID.F.NoFuel))
                     continue;
                 ship.setEntitySit(false);
@@ -730,7 +810,7 @@ public class C2SGUIInputPacket {
                 continue;
             }
             BasicEntityShip ship = resolveTeamShip(level, capa, teamId, i);
-            if (ship != null) {
+            if (ship != null && isOwnedShip(player, ship)) {
                 if (ship.getStateFlag(ID.F.NoFuel))
                     continue;
                 FormationHelper.applyShipGuardEntity(ship, target);
@@ -796,7 +876,7 @@ public class C2SGUIInputPacket {
                 continue;
             }
             BasicEntityShip ship = resolveTeamShip(level, capa, teamId, i);
-            if (ship != null) {
+            if (ship != null && isOwnedShip(player, ship)) {
                 if (ship.getStateFlag(ID.F.NoFuel))
                     continue;
                 FormationHelper.applyShipGuard(ship, gx, gy, gz, false);
@@ -845,13 +925,16 @@ public class C2SGUIInputPacket {
         CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
 
         int teamId = values[1];
+        if (teamId != capa.getSelectTeam()) {
+            return;
+        }
         capa.setFormatID(teamId, values[2]);
         // Update all ships in team
         for (int i = 0; i < CapaTeitoku.SLOT_NUM; i++) {
             int sid = capa.getTeamSID(teamId, i);
             if (sid > 0) {
                 Entity shipEnt = player.serverLevel().getEntity(sid);
-                if (shipEnt instanceof BasicEntityShip ship) {
+                if (shipEnt instanceof BasicEntityShip ship && isOwnedShip(player, ship)) {
                     ship.setStateMinor(ID.M.FormatType, values[2]);
                 }
             }

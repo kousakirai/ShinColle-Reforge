@@ -2,7 +2,7 @@
   "type": "minecraft:crafting_shapeless",
   "ingredients": [
     {
-      "item": "minecraft:ammo_1"
+      "item": "shincolle:ammo_1"
     }
   ],
   "result": {

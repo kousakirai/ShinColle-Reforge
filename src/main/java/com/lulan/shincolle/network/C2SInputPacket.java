@@ -4,17 +4,26 @@ import com.lulan.shincolle.entity.BasicEntityMount;
 import com.lulan.shincolle.entity.BasicEntityShip;
 import com.lulan.shincolle.entity.BasicEntityShipHostile;
 import com.lulan.shincolle.entity.BasicEntitySummon;
+import com.lulan.shincolle.entity.other.BasicEntityItem;
+import com.lulan.shincolle.item.ShipTank;
+import com.lulan.shincolle.playerskill.ShipSkillHandler;
 import com.lulan.shincolle.reference.ID;
 import com.lulan.shincolle.reference.unitclass.Attrs;
+import com.lulan.shincolle.capability.CapaTeitoku;
+import com.lulan.shincolle.server.ServerDataManager;
 import com.lulan.shincolle.utility.LogHelper;
 import com.lulan.shincolle.utility.PacketHelper;
-import com.lulan.shincolle.utility.TargetHelper;
+import com.lulan.shincolle.utility.TeamHelper;
 import com.lulan.shincolle.utility.TileEntityHelper;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraftforge.fluids.FluidUtil;
 import net.minecraftforge.network.NetworkEvent;
 
 import java.util.function.Supplier;
@@ -28,6 +37,7 @@ import java.util.function.Supplier;
  * Ported from 1.10.2 C2SInputPackets.
  */
 public class C2SInputPacket {
+    private static final int MAX_VALUES = 16;
 
     // ========== Packet IDs ==========
 
@@ -43,6 +53,7 @@ public class C2SInputPacket {
     public static final byte Request_ChestSet = 9;
     public static final byte Request_UnitName = 10;
     public static final byte Request_Buffmap = 11;
+    public static final byte PlayerSkill = 12;
     public static final byte Request_EntityItemList = 14;
 
     // ========== Fields ==========
@@ -62,7 +73,7 @@ public class C2SInputPacket {
      */
     public C2SInputPacket(FriendlyByteBuf buf) {
         this.type = buf.readByte();
-        this.values = PacketHelper.readIntArray(buf);
+        this.values = PacketHelper.readIntArray(buf, MAX_VALUES);
     }
 
     /**
@@ -111,6 +122,9 @@ public class C2SInputPacket {
                     case Request_Buffmap:
                         handleRequestBuffmap(sender);
                         break;
+                    case PlayerSkill:
+                        handlePlayerSkill(sender);
+                        break;
                     case Request_WpSet:
                         handleRequestWpSet(sender);
                         break;
@@ -138,16 +152,28 @@ public class C2SInputPacket {
     // ========== Handler Methods ==========
 
     /**
+     * Player skill request from the mount/rider skill key path.
+     * Payload is exactly attack type, target entity id or block X/Y/Z.
+     */
+    private void handlePlayerSkill(ServerPlayer player) {
+        if (values.length != 4 || values[0] < 0 || values[0] > 3)
+            return;
+
+        ShipSkillHandler.handlePlayerSkill(player, values);
+    }
+
+    /**
      * Mount movement key input
      */
     private void handleMountMove(ServerPlayer player) {
-        if (values.length < 1)
+        if (values.length != 1 || (values[0] & ~31) != 0)
             return;
 
         if (player.isPassenger() && player.getVehicle() instanceof BasicEntityMount mount) {
             BasicEntityShip ship = mount.getHost();
 
-            if (ship != null && TargetHelper.checkSameOwner(player, ship)) {
+            if (ship != null && ship.isAlive() && ship.level() == player.level()
+                    && TeamHelper.checkSameOwner(player, ship)) {
                 mount.setMountKeyInput(values[0]);
             }
         }
@@ -157,18 +183,21 @@ public class C2SInputPacket {
      * Mount open GUI key
      */
     private void handleMountGUI(ServerPlayer player) {
+        if (values.length != 0)
+            return;
+
         // open host ship's GUI when on mount
         if (player.isPassenger() && player.getVehicle() instanceof BasicEntityMount mount) {
             BasicEntityShip ship = mount.getHost();
 
-            if (ship != null && TargetHelper.checkSameOwner(player, ship)) {
+            if (ship != null && TeamHelper.checkSameOwner(player, ship)) {
                 ship.openGUI(player);
             }
         }
         // ship riding on player
         else if (!player.getPassengers().isEmpty()
                 && player.getPassengers().get(0) instanceof BasicEntityShip ship) {
-            if (TargetHelper.checkSameOwner(player, ship)) {
+            if (TeamHelper.checkSameOwner(player, ship)) {
                 ship.openGUI(player);
             }
         }
@@ -178,7 +207,7 @@ public class C2SInputPacket {
      * Sync current handheld item slot
      */
     private void handleSyncHandheld(ServerPlayer player) {
-        if (values.length < 1)
+        if (values.length != 1)
             return;
         int slot = values[0];
         if (slot >= 0 && slot < 9) {
@@ -198,7 +227,7 @@ public class C2SInputPacket {
         }
 
         // values: 0:owner eid, 1:ship eid
-        if (values.length < 2)
+        if (values.length != 2)
             return;
 
         ServerLevel level = player.serverLevel();
@@ -206,9 +235,16 @@ public class C2SInputPacket {
         Entity shipEntity = level.getEntity(values[1]);
 
         if (ownerEntity instanceof ServerPlayer newOwner && shipEntity instanceof BasicEntityShip ship) {
-            // change ship ownership
+            CapaTeitoku capa = ServerDataManager.getTeitokuCapability(newOwner);
+            if (capa == null || capa.getPlayerUID() <= 0)
+                return;
+
+            // Keep the entity owner UUID, capability UID, display name, and cache in sync.
             ship.tame(newOwner);
-            ship.setStateMinor(ID.M.PlayerUID, -1); // will be reassigned
+            ship.setOwnerUUID(newOwner.getUUID());
+            ship.setStateMinor(ID.M.PlayerUID, capa.getPlayerUID());
+            ship.ownerName = newOwner.getName().getString();
+            ServerDataManager.updateShipID(ship);
             ship.sendSyncPacketAll();
             LogHelper.debug("C2SInputPacket: CmdChOwner - changed owner of " + ship + " to " + newOwner);
         }
@@ -226,7 +262,7 @@ public class C2SInputPacket {
         }
 
         // values: 0:ship eid, 1:(unused world id), 2:level, 3-8:bonus values
-        if (values.length < 3)
+        if (values.length != 3 && values.length != 9)
             return;
 
         ServerLevel level = player.serverLevel();
@@ -234,6 +270,14 @@ public class C2SInputPacket {
 
         if (entity instanceof BasicEntityShip ship) {
             if (values.length >= 9) {
+                if (values[2] < 1 || values[2] > 150
+                        || values[3] < 0 || values[3] > 100
+                        || values[4] < 0 || values[4] > 100
+                        || values[5] < 0 || values[5] > 100
+                        || values[6] < 0 || values[6] > 100
+                        || values[7] < 0 || values[7] > 100
+                        || values[8] < 0 || values[8] > 100)
+                    return;
                 Attrs shipAttrs = ship.getAttrs();
                 shipAttrs.setAttrsBonus(ID.AttrsBase.HP, values[3]);
                 shipAttrs.setAttrsBonus(ID.AttrsBase.ATK, values[4]);
@@ -243,6 +287,8 @@ public class C2SInputPacket {
                 shipAttrs.setAttrsBonus(ID.AttrsBase.HIT, values[8]);
                 ship.setShipLevel(values[2], true);
             } else {
+                if (values[2] < 1 || values[2] > 150)
+                    return;
                 ship.setShipLevel(values[2], true);
             }
         }
@@ -253,11 +299,14 @@ public class C2SInputPacket {
      */
     private void handleRequestSyncModel(ServerPlayer player) {
         // values: 0:entity id, 1:(unused world id)
-        if (values.length < 1)
+        if (values.length != 1)
             return;
 
         ServerLevel level = player.serverLevel();
         Entity entity = level.getEntity(values[0]);
+
+        if (entity == null || !isWithinDistance(player, entity, 256.0D))
+            return;
 
         if (entity instanceof BasicEntityShip ship) {
             ship.sendSyncPacketEmotion();
@@ -273,16 +322,17 @@ public class C2SInputPacket {
      */
     private void handleRequestRiding(ServerPlayer player) {
         // values: 0:entity id, 1:(unused world id)
-        if (values.length < 1)
+        if (values.length != 1)
             return;
 
         ServerLevel level = player.serverLevel();
         Entity entity = level.getEntity(values[0]);
 
-        if (entity instanceof BasicEntityShip ship) {
-            if (TargetHelper.checkSameOwner(player, ship)) {
+        if (entity instanceof BasicEntityShip ship && ship.isAlive()
+                && TeamHelper.checkSameOwner(player, ship)
+                && isWithinDistance(player, ship, 8.0D)) {
+            if (ship.startRiding(player, true)) {
                 ship.setEntitySit(false);
-                ship.startRiding(player, true);
                 ship.getNavigation().stop();
                 ship.sendSyncPacketRiders();
             }
@@ -294,13 +344,14 @@ public class C2SInputPacket {
      */
     private void handleRequestUnitName(ServerPlayer player) {
         // values: 0:entity id, 1:(unused world id)
-        if (values.length < 1)
+        if (values.length != 1)
             return;
 
         ServerLevel level = player.serverLevel();
         Entity entity = level.getEntity(values[0]);
 
-        if (entity instanceof BasicEntityShip ship) {
+        if (entity instanceof BasicEntityShip ship
+                && isWithinDistance(player, ship, 256.0D)) {
             ModNetworking.sendToAllTracking(
                     S2CEntitySyncPacket.syncUnitName(ship), ship);
         }
@@ -311,13 +362,14 @@ public class C2SInputPacket {
      */
     private void handleRequestBuffmap(ServerPlayer player) {
         // values: 0:entity id, 1:(unused world id)
-        if (values.length < 1)
+        if (values.length != 1)
             return;
 
         ServerLevel level = player.serverLevel();
         Entity entity = level.getEntity(values[0]);
 
-        if (entity instanceof BasicEntityShip ship) {
+        if (entity instanceof BasicEntityShip ship
+                && isWithinDistance(player, ship, 256.0D)) {
             ModNetworking.sendToAllTracking(
                     S2CEntitySyncPacket.syncBuffMap(ship), ship);
         }
@@ -327,24 +379,24 @@ public class C2SInputPacket {
      * Waypoint pairing
      */
     private void handleRequestWpSet(ServerPlayer player) {
-        // values: 0:playerUID, 1-3:from xyz, 4-6:to xyz
-        if (values.length < 7)
+        // values: 0:legacy playerUID (ignored), 1-3:from xyz, 4-6:to xyz
+        if (values.length != 7)
             return;
         BlockPos posFrom = new BlockPos(values[1], values[2], values[3]);
         BlockPos posTo = new BlockPos(values[4], values[5], values[6]);
-        TileEntityHelper.pairingWaypoints(player, values[0], player.serverLevel(), posFrom, posTo);
+        TileEntityHelper.pairingWaypoints(player, player.serverLevel(), posFrom, posTo);
     }
 
     /**
      * Chest and waypoint pairing
      */
     private void handleRequestChestSet(ServerPlayer player) {
-        // values: 0:playerUID, 1-3:waypoint xyz, 4-6:chest xyz
-        if (values.length < 7)
+        // values: 0:legacy playerUID (ignored), 1-3:waypoint xyz, 4-6:chest xyz
+        if (values.length != 7)
             return;
         BlockPos posWp = new BlockPos(values[1], values[2], values[3]);
         BlockPos posChest = new BlockPos(values[4], values[5], values[6]);
-        TileEntityHelper.pairingWaypointAndChest(player, values[0], player.serverLevel(), posWp, posChest);
+        TileEntityHelper.pairingWaypointAndChest(player, player.serverLevel(), posWp, posChest);
     }
 
     /**
@@ -352,37 +404,60 @@ public class C2SInputPacket {
      */
     private void handleRequestPlaceFluid(ServerPlayer player) {
         // values: 0:x, 1:y, 2:z
-        if (values.length < 3)
+        if (values.length != 3)
             return;
         BlockPos pos = new BlockPos(values[0], values[1], values[2]);
 
-        // Distance check: prevent placing fluid at remote positions
-        if (player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > 64)
+        // This compatibility path must use the actual server-side held stack;
+        // never allow a packet to create fluid for free.
+        ItemStack stack = player.getMainHandItem();
+        if (!(stack.getItem() instanceof ShipTank))
             return;
 
-        // Place water source at position if ship has fluid tank capability
+        // Distance, chunk, and build-permission checks all run on the server.
+        if (player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) >= 64
+                || !player.serverLevel().hasChunkAt(pos)
+                || !player.serverLevel().mayInteract(player, pos)
+                || !player.mayUseItemAt(pos, Direction.UP, stack))
+            return;
+
+        // Resolve the actual item capability and consume only through the
+        // common, simulation-first placement helper.
         ServerLevel level = player.serverLevel();
-        if (level.getBlockState(pos).isAir()) {
-            level.setBlock(pos, net.minecraft.world.level.block.Blocks.WATER.defaultBlockState(), 3);
-        }
+        FluidUtil.getFluidHandler(stack).resolve().ifPresent(handler ->
+                ShipTank.tryPlaceContainedLiquid(player, level, pos,
+                        net.minecraft.world.InteractionHand.MAIN_HAND, handler));
     }
 
     /**
      * Entity item list for radar
      */
     private void handleRequestEntityItemList(ServerPlayer player) {
-        // Gather nearby BasicEntityShip positions for radar display
+        if (values.length != 1)
+            return;
+
+        // Gather nearby BasicEntityItem positions for radar display
         ServerLevel level = player.serverLevel();
-        java.util.List<BasicEntityShip> ships = level.getEntitiesOfClass(
-                BasicEntityShip.class, player.getBoundingBox().inflate(256));
-        float[] items = new float[ships.size() * 3]; // x, y, z per ship
-        for (int i = 0; i < ships.size(); i++) {
-            BasicEntityShip s = ships.get(i);
-            items[i * 3] = (float) s.getX();
-            items[i * 3 + 1] = (float) s.getY();
-            items[i * 3 + 2] = (float) s.getZ();
+        AABB searchBox = new AABB(
+                player.getX() - 128.0D, player.getY() - 256.0D, player.getZ() - 128.0D,
+                player.getX() + 128.0D, player.getY() + 256.0D, player.getZ() + 128.0D);
+        java.util.List<BasicEntityItem> itemsInRange = level.getEntitiesOfClass(
+                BasicEntityItem.class, searchBox);
+        float[] items = new float[itemsInRange.size() * 3]; // x, y, z per item
+        for (int i = 0; i < itemsInRange.size(); i++) {
+            BasicEntityItem item = itemsInRange.get(i);
+            items[i * 3] = (float) item.getX();
+            items[i * 3 + 1] = (float) item.getY();
+            items[i * 3 + 2] = (float) item.getZ();
         }
         ModNetworking.sendToPlayer(S2CGUISyncPacket.syncEntityItemList(items), player);
+    }
+
+    /**
+     * Strict squared-distance gate shared by entity request handlers and tests.
+     */
+    static boolean isWithinDistance(Entity first, Entity second, double distance) {
+        return first != null && second != null && first.distanceToSqr(second) < distance * distance;
     }
 
     // ========== Getters ==========

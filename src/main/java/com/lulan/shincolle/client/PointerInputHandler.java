@@ -1,11 +1,14 @@
 package com.lulan.shincolle.client;
 
 import com.lulan.shincolle.capability.CapaTeitoku;
+import com.lulan.shincolle.entity.BasicEntityMount;
 import com.lulan.shincolle.init.ModItems;
 import com.lulan.shincolle.item.PointerItem;
 import com.lulan.shincolle.network.C2SGUIInputPacket;
+import com.lulan.shincolle.network.C2SInputPacket;
 import com.lulan.shincolle.network.ModNetworking;
 import com.lulan.shincolle.reference.Reference;
+import com.lulan.shincolle.utility.EntityHelper;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -25,6 +28,8 @@ import net.minecraftforge.fml.common.Mod;
 @Mod.EventBusSubscriber(modid = Reference.MOD_ID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class PointerInputHandler {
 
+    private static int mountInputCooldown;
+
     private PointerInputHandler() {
     }
 
@@ -39,6 +44,8 @@ public class PointerInputHandler {
         if (player == null || mc.level == null || mc.screen != null) {
             return;
         }
+
+        handleMountMovement(player, mc);
 
         ItemStack pointerInUse = getPointerInUse(player);
         if (pointerInUse.isEmpty()) {
@@ -61,6 +68,44 @@ public class PointerInputHandler {
                 ModNetworking.sendToServer(new C2SGUIInputPacket(
                         C2SGUIInputPacket.SyncPlayerItem,
                         new int[]{player.getId(), 0, mode}));
+            }
+        }
+    }
+
+    private static void handleMountMovement(LocalPlayer player, Minecraft mc) {
+        if (mountInputCooldown > 0) {
+            mountInputCooldown--;
+        }
+
+        if (!(player.getVehicle() instanceof BasicEntityMount mount)) {
+            mountInputCooldown = 0;
+            return;
+        }
+
+        int keys = 0;
+        if (mc.options.keyUp.isDown()) {
+            keys |= 1;
+        }
+        if (mc.options.keyDown.isDown()) {
+            keys |= 2;
+        }
+        if (mc.options.keyLeft.isDown()) {
+            keys |= 4;
+        }
+        if (mc.options.keyRight.isDown()) {
+            keys |= 8;
+        }
+        if (mc.options.keyJump.isDown()
+                && (mount.onGround() || EntityHelper.checkEntityIsInLiquid(mount))) {
+            keys |= 16;
+        }
+
+        if (keys != 0) {
+            // Keep client prediction in lockstep with the server's ten-tick lease.
+            mount.setMountKeyInput(keys);
+            if (mountInputCooldown == 0) {
+                ModNetworking.sendToServer(new C2SInputPacket(C2SInputPacket.MountMove, keys));
+                mountInputCooldown = 2;
             }
         }
     }

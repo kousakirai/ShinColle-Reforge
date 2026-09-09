@@ -16,8 +16,7 @@ import java.util.List;
  * - hasRing / isRingActive / isRingFlying (marriage ring state)
  * - marriageNum (total married ships)
  * - bossCooldown / teamCooldown (cooldown timers)
- * - teamList[9][6] - 9 teams of 6 ships each (ship entity IDs / -1)
- * - sidList[9][6]  - ship UIDs per team slot
+ * - teamList[9][6] - 9 teams of 6 ships each (persistent Ship UIDs / -1)
  * - formatID[9]    - formation type per team
  * - unitNames[9]   - team names
  * - playerUID      - unique player ID
@@ -25,8 +24,8 @@ import java.util.List;
  * - colledShipNum / colledEquipNum - collection counters
  *
  * Runtime-only (not serialized):
+ * - sidList[9][6] - runtime entity IDs per team slot
  * - entityCache[9][6] - live BasicEntityShip references per team slot
- * - selectState[9][6] - whether each slot is "focused" (selected)
  */
 public class CapaTeitoku implements INBTSerializable<CompoundTag> {
 
@@ -35,9 +34,9 @@ public class CapaTeitoku implements INBTSerializable<CompoundTag> {
 
     // ========== Persistent data ==========
 
-    /** teamList[team][slot] = ship entity ID (-1 = empty) */
+    /** teamList[team][slot] = persistent Ship UID (-1 = empty) */
     private final int[][] teamList;
-    /** sidList[team][slot] = ship UID (-1 = empty) */
+    /** sidList[team][slot] = runtime entity ID (-1 = unresolved or empty) */
     private final int[][] sidList;
     /** formatID[team] = formation type */
     private final int[] formatID;
@@ -78,11 +77,7 @@ public class CapaTeitoku implements INBTSerializable<CompoundTag> {
      */
     private final BasicEntityShip[][] entityCache;
 
-    /**
-     * フォーカス(選択)状態 per team slot。
-     * true = このスロットのshipがフォーカス対象。
-     * 1.10.2版の getSelectStateCurrentTeam 相当。
-     */
+    /** Persisted focus state per team slot. */
     private final boolean[][] selectState;
 
     // ========== Constructor ==========
@@ -152,8 +147,9 @@ public class CapaTeitoku implements INBTSerializable<CompoundTag> {
         ListTag teamTag = new ListTag();
         for (int i = 0; i < TEAM_NUM; i++) {
             CompoundTag team = new CompoundTag();
-            team.putIntArray("EIDs",   teamList[i]);
-            team.putIntArray("SIDs",   sidList[i]);
+            // Ship UID is durable; Minecraft entity IDs are reconstructed every load.
+            team.putIntArray("ShipUIDs", teamList[i]);
+            team.putByteArray("SelectState", getSelectStateByteArray(i));
             team.putInt("Format",      formatID[i]);
             team.putString("Name",     unitNames[i] != null ? unitNames[i] : "");
             teamTag.add(team);
@@ -185,14 +181,30 @@ public class CapaTeitoku implements INBTSerializable<CompoundTag> {
         this.colledShipNum  = nbt.getInt("ColledShip");
         this.colledEquipNum = nbt.getInt("ColledEquip");
 
+        clearTeamRuntimeState();
+        for (int team = 0; team < TEAM_NUM; team++) {
+            for (int slot = 0; slot < SLOT_NUM; slot++) {
+                teamList[team][slot] = -1;
+                selectState[team][slot] = false;
+            }
+        }
+
         if (nbt.contains("Teams")) {
             ListTag teamTag = nbt.getList("Teams", Tag.TAG_COMPOUND);
             for (int i = 0; i < Math.min(teamTag.size(), TEAM_NUM); i++) {
                 CompoundTag team = teamTag.getCompound(i);
-                int[] eids = team.getIntArray("EIDs");
-                int[] sids = team.getIntArray("SIDs");
-                System.arraycopy(eids, 0, teamList[i], 0, Math.min(eids.length, SLOT_NUM));
-                System.arraycopy(sids, 0, sidList[i],  0, Math.min(sids.length, SLOT_NUM));
+                // Old target saves wrote Ship UIDs under EIDs despite the misleading
+                // name.  SIDs held runtime entity IDs and must be discarded.
+                int[] shipUIDs = team.contains("ShipUIDs", Tag.TAG_INT_ARRAY)
+                        ? team.getIntArray("ShipUIDs")
+                        : team.getIntArray("EIDs");
+                System.arraycopy(shipUIDs, 0, teamList[i], 0, Math.min(shipUIDs.length, SLOT_NUM));
+                if (team.contains("SelectState", Tag.TAG_BYTE_ARRAY)) {
+                    byte[] selected = team.getByteArray("SelectState");
+                    for (int slot = 0; slot < Math.min(selected.length, SLOT_NUM); slot++) {
+                        selectState[i][slot] = selected[slot] != 0;
+                    }
+                }
                 formatID[i]  = team.getInt("Format");
                 unitNames[i] = team.getString("Name");
             }
@@ -208,8 +220,7 @@ public class CapaTeitoku implements INBTSerializable<CompoundTag> {
         this.colledEquipList = loadIntList(nbt, "ColledEquipList");
         this.shipList        = loadIntList(nbt, "ShipList");
 
-        // ロード後はエンティティキャッシュをクリア（再ロードまで無効）
-        clearEntityCache();
+        // Runtime entity IDs/references are rebuilt by TeamHelper after load.
     }
 
     private static List<Integer> loadIntList(CompoundTag nbt, String key) {
@@ -218,6 +229,14 @@ public class CapaTeitoku implements INBTSerializable<CompoundTag> {
             for (int v : nbt.getIntArray(key)) list.add(v);
         }
         return list;
+    }
+
+    private byte[] getSelectStateByteArray(int team) {
+        byte[] result = new byte[SLOT_NUM];
+        for (int slot = 0; slot < SLOT_NUM; slot++) {
+            result[slot] = selectState[team][slot] ? (byte) 1 : (byte) 0;
+        }
+        return result;
     }
 
     // ========== Runtime entity cache ==========
@@ -315,7 +334,7 @@ public class CapaTeitoku implements INBTSerializable<CompoundTag> {
      */
     public int checkIsInCurrentTeam(int shipUID) {
         for (int i = 0; i < SLOT_NUM; i++) {
-            if (sidList[selectTeam][i] == shipUID) return i;
+            if (teamList[selectTeam][i] == shipUID) return i;
         }
         return -1;
     }
@@ -328,7 +347,7 @@ public class CapaTeitoku implements INBTSerializable<CompoundTag> {
     public int checkIsInTeam(int team, int shipUID) {
         if (team < 0 || team >= TEAM_NUM) return -1;
         for (int i = 0; i < SLOT_NUM; i++) {
-            if (sidList[team][i] == shipUID) return i;
+            if (teamList[team][i] == shipUID) return i;
         }
         return -1;
     }
@@ -417,8 +436,8 @@ public class CapaTeitoku implements INBTSerializable<CompoundTag> {
         return -1;
     }
 
-    public void setTeamMember(int team, int slot, int entityId) {
-        if (team >= 0 && team < TEAM_NUM && slot >= 0 && slot < SLOT_NUM) teamList[team][slot] = entityId;
+    public void setTeamMember(int team, int slot, int shipUID) {
+        if (team >= 0 && team < TEAM_NUM && slot >= 0 && slot < SLOT_NUM) teamList[team][slot] = shipUID;
     }
 
     public int getTeamSID(int team, int slot) {
@@ -426,8 +445,8 @@ public class CapaTeitoku implements INBTSerializable<CompoundTag> {
         return -1;
     }
 
-    public void setTeamSID(int team, int slot, int shipUID) {
-        if (team >= 0 && team < TEAM_NUM && slot >= 0 && slot < SLOT_NUM) sidList[team][slot] = shipUID;
+    public void setTeamSID(int team, int slot, int entityId) {
+        if (team >= 0 && team < TEAM_NUM && slot >= 0 && slot < SLOT_NUM) sidList[team][slot] = entityId;
     }
 
     public int getFormatID(int team) {
@@ -450,13 +469,34 @@ public class CapaTeitoku implements INBTSerializable<CompoundTag> {
 
     // ========== Utility ==========
 
-    /** Clear all entity IDs in team slots (e.g. on dimension change). */
+    /** Clear all derived runtime entity IDs and references, preserving Ship UIDs. */
     public void clearTeamEntityIDs() {
+        clearTeamRuntimeState();
+    }
+
+    /** Return the runtime entity reference for one formation slot, if resolved. */
+    public BasicEntityShip getShipEntity(int team, int slot) {
+        if (team >= 0 && team < TEAM_NUM && slot >= 0 && slot < SLOT_NUM) {
+            return entityCache[team][slot];
+        }
+        return null;
+    }
+
+    /**
+     * Clear derived runtime state and report whether client-visible entity IDs changed.
+     */
+    public boolean clearTeamRuntimeState() {
+        boolean changed = false;
         for (int i = 0; i < TEAM_NUM; i++) {
             for (int j = 0; j < SLOT_NUM; j++) {
-                teamList[i][j] = -1;
+                if (sidList[i][j] != -1 || entityCache[i][j] != null) {
+                    changed = true;
+                }
+                sidList[i][j] = -1;
+                entityCache[i][j] = null;
             }
         }
+        return changed;
     }
 
     /** Check if this player has a team (has team data in ServerDataManager). */
@@ -492,10 +532,10 @@ public class CapaTeitoku implements INBTSerializable<CompoundTag> {
 
         for (int i = 0; i < TEAM_NUM; i++) {
             System.arraycopy(other.teamList[i], 0, this.teamList[i], 0, SLOT_NUM);
-            System.arraycopy(other.sidList[i],  0, this.sidList[i],  0, SLOT_NUM);
             this.formatID[i]  = other.formatID[i];
             this.unitNames[i] = other.unitNames[i];
-            // entityCacheとselectStateはランタイムデータなのでコピーしない
+            System.arraycopy(other.selectState[i], 0, this.selectState[i], 0, SLOT_NUM);
         }
+        clearTeamRuntimeState();
     }
 }

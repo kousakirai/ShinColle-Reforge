@@ -37,7 +37,7 @@ public class ShipRangeAttackGoal extends Goal {
     public ShipRangeAttackGoal(IShipCannonAttack host) {
         this.host = host;
         this.entity = (Mob) host;
-        this.setFlags(EnumSet.of(Goal.Flag.MOVE, Goal.Flag.LOOK));
+        this.setFlags(EnumSet.of(Goal.Flag.MOVE));
 
         this.delayLight = INITIAL_LIGHT_DELAY;
         this.delayHeavy = INITIAL_HEAVY_DELAY;

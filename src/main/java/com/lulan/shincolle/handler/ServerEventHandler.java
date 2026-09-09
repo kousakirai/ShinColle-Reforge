@@ -6,10 +6,13 @@ import com.lulan.shincolle.entity.BasicEntityShip;
 import com.lulan.shincolle.entity.BasicEntityShipHostile;
 import com.lulan.shincolle.entity.IShipAttackBase;
 import com.lulan.shincolle.init.ModItems;
+import com.lulan.shincolle.network.ModNetworking;
+import com.lulan.shincolle.network.S2CGUISyncPacket;
 import com.lulan.shincolle.reference.Reference;
 import com.lulan.shincolle.server.ServerDataManager;
 import com.lulan.shincolle.utility.EntityHelper;
 import com.lulan.shincolle.utility.LogHelper;
+import com.lulan.shincolle.utility.TeamHelper;
 
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
@@ -110,6 +113,12 @@ public class ServerEventHandler {
             if ((player.tickCount & 127) == 0) {
                 EntityHelper.spawnMobShip(player, capa);
             }
+
+            // Canonical timing restored team references after entities had time to
+            // publish their UID cache, then refreshed periodically for late loads.
+            if (player.tickCount == 64 || (player.tickCount & 255) == 0) {
+                syncRelinkedTeamRuntimeState(player, capa);
+            }
         }
         EntityHelper.spawnBossShip(player, capa);
         int teamCooldown = capa.getTeamCooldown();
@@ -205,6 +214,24 @@ public class ServerEventHandler {
     private static void updatePlayerCacheOnServer(Player player) {
         if (player != null && !player.level().isClientSide()) {
             ServerDataManager.updatePlayerID(player);
+            CapaTeitoku capa = ServerDataManager.getTeitokuCapability(player);
+            if (capa != null) {
+                boolean changed = capa.clearTeamRuntimeState();
+                if (ServerDataManager.isInitialized()) {
+                    changed |= TeamHelper.relinkAllTeamRuntimeState(player, capa);
+                }
+                if (changed && player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+                    ModNetworking.sendToPlayer(S2CGUISyncPacket.syncShipsAll(capa), serverPlayer);
+                }
+            }
+        }
+    }
+
+    private static void syncRelinkedTeamRuntimeState(Player player, CapaTeitoku capa) {
+        if (ServerDataManager.isInitialized()
+                && TeamHelper.relinkAllTeamRuntimeState(player, capa)
+                && player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            ModNetworking.sendToPlayer(S2CGUISyncPacket.syncShipsAll(capa), serverPlayer);
         }
     }
 

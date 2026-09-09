@@ -41,6 +41,10 @@ public class ShipSkillHandler {
      * @param data   0: attack type, 1: targetEID or pos.X, 2: pos.Y, 3: pos.Z
      */
     public static void handlePlayerSkill(Player player, int[] data) {
+        if (player == null || data == null || data.length != 4
+                || data[0] < 0 || data[0] > 3)
+            return;
+
         BasicEntityShip ship = null;
 
         // If player is riding ship mounts
@@ -68,7 +72,12 @@ public class ShipSkillHandler {
      * @param data   0: attack type, 1: targetEID or pos.X, 2: pos.Y, 3: pos.Z
      */
     public static void castPlayerSkill(BasicEntityShip ship, Player player, int[] data) {
-        if (ship == null || !TeamHelper.checkSameOwner(player, ship))
+        if (ship == null || player == null || data == null || data.length != 4
+                || data[0] < 0 || data[0] > 3
+                || !ship.isAlive() || !player.isAlive()
+                || ship.level() != player.level()
+                || !isCurrentSkillHost(player, ship)
+                || !TeamHelper.checkSameOwner(player, ship))
             return;
 
         int skill;
@@ -194,5 +203,14 @@ public class ShipSkillHandler {
             return Math.max(4, (int) (baseDelay / atkSpd));
         }
         return (int) baseDelay;
+    }
+
+    /** Only a currently controlled mount host or first ship passenger may cast. */
+    private static boolean isCurrentSkillHost(Player player, BasicEntityShip ship) {
+        if (player.getVehicle() instanceof BasicEntityMount mount) {
+            return mount.getHostEntity() == ship;
+        }
+        return !player.getPassengers().isEmpty()
+                && player.getPassengers().get(0) == ship;
     }
 }

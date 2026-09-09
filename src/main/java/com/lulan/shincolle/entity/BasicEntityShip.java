@@ -161,6 +161,7 @@ public abstract class BasicEntityShip extends TamableAnimal
     protected float entityHeight = 1.875F;
     // initialization
     private boolean initAI, initWaitAI;
+    private boolean goalRefreshRequested, targetGoalRefreshRequested;
     private boolean isUpdated;
     private int updateTime = 16;
 
@@ -221,6 +222,8 @@ public abstract class BasicEntityShip extends TamableAnimal
         // init
         this.initAI = false;
         this.initWaitAI = false;
+        this.goalRefreshRequested = false;
+        this.targetGoalRefreshRequested = false;
         this.isUpdated = false;
     }
 
@@ -435,8 +438,6 @@ public abstract class BasicEntityShip extends TamableAnimal
         this.goalSelector.addGoal(3, new ShipGuardingGoal(this));
         this.goalSelector.addGoal(4, new ShipFollowOwnerGoal(this));
         this.goalSelector.addGoal(5, new ShipOpenDoorGoal(this, true));
-        this.goalSelector.addGoal(11, new ShipRangeAttackGoal(this));
-
         // melee attack
         if (getStateFlag(ID.F.UseMelee)) {
             this.goalSelector.addGoal(15, new ShipAttackOnCollideGoal(this, 1.0D));
@@ -658,6 +659,7 @@ public abstract class BasicEntityShip extends TamableAnimal
         if (!level().isClientSide()) {
             EntityHelper.updateShipNavigator(this);
             TargetHelper.updateTarget(this);
+            applyPendingAiRefreshes();
 
             super.aiStep();
 
@@ -2100,16 +2102,33 @@ public abstract class BasicEntityShip extends TamableAnimal
 
         if (!this.level().isClientSide()) {
             if (id == ID.F.UseMelee) {
-                clearAITasks();
-                setAIList();
-                if (this.getVehicle() instanceof BasicEntityMount mount) {
-                    mount.clearAITasks();
-                    mount.setAIList();
-                }
+                this.goalRefreshRequested = true;
             } else if (id == ID.F.PassiveAI) {
-                clearAITargetTasks();
-                setAITargetList();
+                this.targetGoalRefreshRequested = true;
             }
+        }
+    }
+
+    /**
+     * GoalSelector cannot be mutated while it is ticking.  Flag changes can
+     * arrive from a packet or a behavior, so defer rebuilding selectors until
+     * the next server AI step, before {@code super.aiStep()} ticks them.
+     */
+    private void applyPendingAiRefreshes() {
+        if (this.goalRefreshRequested) {
+            clearAITasks();
+            setAIList();
+            if (this.getVehicle() instanceof BasicEntityMount mount) {
+                mount.clearAITasks();
+                mount.setAIList();
+            }
+            this.goalRefreshRequested = false;
+        }
+
+        if (this.targetGoalRefreshRequested) {
+            clearAITargetTasks();
+            setAITargetList();
+            this.targetGoalRefreshRequested = false;
         }
     }
 

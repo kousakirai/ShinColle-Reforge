@@ -86,7 +86,7 @@ public class CapaShipInventory {
      * Find first empty slot for item storage. Returns slot index or -1 if full.
      */
     public int getFirstSlotForItem() {
-        for (int i = 0; i < stacks.length; i++) {
+        for (int i = EquipSlots; i < stacks.length; i++) {
             if (stacks[i].isEmpty()) {
                 return i;
             }
@@ -102,7 +102,8 @@ public class CapaShipInventory {
             return false;
 
         // try to merge with existing stacks first
-        for (ItemStack itemStack : stacks) {
+        for (int i = EquipSlots; i < stacks.length; i++) {
+            ItemStack itemStack = stacks[i];
             if (!itemStack.isEmpty() && ItemStack.isSameItemSameTags(itemStack, stack)) {
                 int maxSize = itemStack.getMaxStackSize();
                 int canAdd = maxSize - itemStack.getCount();

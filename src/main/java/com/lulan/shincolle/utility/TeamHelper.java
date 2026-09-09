@@ -185,37 +185,54 @@ public class TeamHelper {
         return false;
     }
 
-    /**
-     * Update team ship pointers.
-     * Resolves ship UIDs to entity IDs for the current team.
-     */
+    /** Compatibility delegate for callers that refresh only the selected team. */
     public static void updateTeamList(Player player, CapaTeitoku capa) {
-        int team = capa.getSelectTeam();
+        relinkTeamRuntimeState(player, capa, capa.getSelectTeam());
+    }
+
+    /**
+     * Rebuild runtime entity IDs/references from durable Ship UIDs for one team.
+     * Unresolved ships retain their UID so a later retry can link them safely.
+     *
+     * @return whether client-visible runtime state changed
+     */
+    public static boolean relinkTeamRuntimeState(Player player, CapaTeitoku capa, int team) {
+        if (player == null || capa == null || team < 0 || team >= CapaTeitoku.TEAM_NUM) {
+            return false;
+        }
+
+        boolean changed = false;
 
         for (int i = 0; i < CapaTeitoku.SLOT_NUM; i++) {
             int shipUID = capa.getTeamMember(team, i);
-            BasicEntityShip ship = ServerDataManager.getShipByUID(shipUID);
+            int oldEntityId = capa.getTeamSID(team, i);
+            BasicEntityShip oldEntity = capa.getShipEntity(team, i);
+            BasicEntityShip ship = shipUID > 0 ? ServerDataManager.getShipByUID(shipUID) : null;
 
-            if (ship != null) {
-                if (checkSameOwner(ship, player)) {
-                    // TeamMember stores persistent ship UID; TeamSID stores runtime entity ID.
-                    capa.setTeamMember(team, i, ship.getStateMinor(ID.M.ShipUID));
-                    capa.setTeamSID(team, i, ship.getId());
-                } else {
-                    // Owner changed, clear runtime entity pointer but keep persistent UID.
-                    capa.setTeamSID(team, i, -1);
+            if (ship != null && ship.getShipUID() == shipUID && checkSameOwner(ship, player)) {
+                if (oldEntityId != ship.getId() || oldEntity != ship) {
+                    changed = true;
                 }
+                capa.setTeamSID(team, i, ship.getId());
+                capa.setShipEntity(team, i, ship);
             } else {
-                // Ship not found; clear runtime entity pointer but keep UID for later relink.
-                capa.setTeamSID(team, i, -1);
-
-                // Truly empty slot: clear both fields.
-                if (shipUID <= 0) {
-                    capa.setTeamMember(team, i, -1);
-                    capa.setTeamSID(team, i, -1);
+                if (oldEntityId != -1 || oldEntity != null) {
+                    changed = true;
                 }
+                capa.setTeamSID(team, i, -1);
+                capa.setShipEntity(team, i, null);
             }
         }
+        return changed;
+    }
+
+    /** Rebuild runtime state for every persisted formation slot. */
+    public static boolean relinkAllTeamRuntimeState(Player player, CapaTeitoku capa) {
+        boolean changed = false;
+        for (int team = 0; team < CapaTeitoku.TEAM_NUM; team++) {
+            changed |= relinkTeamRuntimeState(player, capa, team);
+        }
+        return changed;
     }
 
     /**

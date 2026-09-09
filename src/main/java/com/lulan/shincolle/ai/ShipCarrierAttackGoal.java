@@ -36,7 +36,7 @@ public class ShipCarrierAttackGoal extends Goal {
     public ShipCarrierAttackGoal(IShipAircraftAttack host) {
         this.host = host;
         this.entity = (Mob) host;
-        this.setFlags(EnumSet.of(Goal.Flag.MOVE, Goal.Flag.LOOK));
+        this.setFlags(EnumSet.of(Goal.Flag.LOOK));
 
         this.launchDelay = 20;
         this.launchDelayMax = 40;

@@ -8,6 +8,9 @@ import com.lulan.shincolle.reference.ID;
 import com.lulan.shincolle.reference.unitclass.Attrs;
 import com.lulan.shincolle.reference.unitclass.AttrsAdv;
 import com.lulan.shincolle.reference.unitclass.MissileData;
+import com.lulan.shincolle.utility.CalcHelper;
+import com.lulan.shincolle.utility.EntityHelper;
+import com.lulan.shincolle.utility.TeamHelper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
@@ -15,7 +18,9 @@ import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 
 import javax.annotation.Nullable;
@@ -123,6 +128,12 @@ public abstract class BasicEntityMount extends TamableAnimal
         return false;
     }
 
+    @Override
+    public LivingEntity getControllingPassenger() {
+        Entity passenger = this.getFirstPassenger();
+        return passenger instanceof LivingEntity living ? living : null;
+    }
+
     @SuppressWarnings("deprecation")
     @Override
     public boolean canBreatheUnderwater() {
@@ -151,8 +162,111 @@ public abstract class BasicEntityMount extends TamableAnimal
      * Set key input from player and reset decay timer
      */
     public void setMountKeyInput(int key) {
+        if ((key & ~31) != 0)
+            return;
         this.keyPressed = key;
         this.keyTick = 10;
+    }
+
+    @Override
+    public void aiStep() {
+        boolean hadRiderInput = this.keyTick > 0;
+        if (hadRiderInput && this.getControllingPassenger() != null) {
+            this.getNavigation().stop();
+        }
+
+        super.aiStep();
+
+        // Decrement after super.aiStep()/travel so an input retained for ten
+        // ticks is applied on the tenth tick as in the canonical update order.
+        if (hadRiderInput && this.keyTick > 0 && --this.keyTick == 0) {
+            this.keyPressed = 0;
+        }
+    }
+
+    @Override
+    public void travel(Vec3 travelVector) {
+        LivingEntity rider = this.getControllingPassenger();
+        if (this.keyTick > 0 && rider instanceof Player player
+                && this.host != null && this.host.isAlive()
+                && this.host.level() == this.level()
+                && !this.host.getStateFlag(ID.F.NoFuel)
+                && TeamHelper.checkSameOwner(player, this.host)) {
+            applyMountMovement(player);
+            super.travel(Vec3.ZERO);
+            if (this.horizontalCollision) {
+                this.setDeltaMovement(this.getDeltaMovement().add(0D, 0.4D, 0D));
+            }
+            return;
+        }
+
+        super.travel(travelVector);
+    }
+
+    /** Apply canonical rider-relative movement on both logical sides. */
+    private void applyMountMovement(Player rider) {
+        final float moveSpeed = this.getMoveSpeed();
+        final float yaw = rider.getYHeadRot() * ((float) Math.PI / 180F);
+        final float pitch = rider.getXRot() * ((float) Math.PI / 180F);
+        float[] moveZ = CalcHelper.rotateXZByAxis(moveSpeed, 0F, yaw, 1F);
+        float[] moveX = CalcHelper.rotateXZByAxis(0F, moveSpeed, yaw, 1F);
+        Vec3 motion = this.getDeltaMovement();
+
+        if ((this.keyPressed & 16) != 0) {
+            if (this.onGround()) {
+                motion = new Vec3(motion.x, Math.max(motion.y, 0.42D), motion.z);
+            } else if (EntityHelper.checkEntityIsInLiquid(this)) {
+                motion = new Vec3(motion.x, Math.min(1D, motion.y + moveSpeed * 0.1D), motion.z);
+            }
+        }
+
+        boolean groundedOrLiquid = this.onGround() || EntityHelper.checkEntityIsInLiquid(this);
+        double acceleration = groundedOrLiquid ? 0.25D : 0.25D;
+        double sidewaysAcceleration = groundedOrLiquid ? acceleration : 0.03125D;
+
+        if ((this.keyPressed & 1) != 0) {
+            motion = new Vec3(
+                    clampAxis(motion.x + moveZ[1] * acceleration, moveZ[1]),
+                    adjustPitch(motion.y, pitch, -0.1D, 0.1D, moveSpeed * 0.5D),
+                    clampAxis(motion.z + moveZ[0] * acceleration, moveZ[0]));
+        }
+        if ((this.keyPressed & 2) != 0) {
+            motion = new Vec3(
+                    clampAxis(motion.x - moveZ[1] * acceleration, -moveZ[1]),
+                    adjustPitch(motion.y, pitch, 0.1D, -0.1D, moveSpeed * 0.5D),
+                    clampAxis(motion.z - moveZ[0] * acceleration, -moveZ[0]));
+        }
+        if ((this.keyPressed & 4) != 0) {
+            motion = new Vec3(
+                    clampAxis(motion.x + moveX[1] * sidewaysAcceleration, moveX[1]),
+                    motion.y,
+                    clampAxis(motion.z + moveX[0] * sidewaysAcceleration, moveX[0]));
+        }
+        if ((this.keyPressed & 8) != 0) {
+            motion = new Vec3(
+                    clampAxis(motion.x - moveX[1] * sidewaysAcceleration, -moveX[1]),
+                    motion.y,
+                    clampAxis(motion.z - moveX[0] * sidewaysAcceleration, -moveX[0]));
+        }
+
+        this.setDeltaMovement(motion);
+        this.setYRot(rider.getYRot());
+        this.yRotO = rider.yRotO;
+    }
+
+    private static double clampAxis(double value, double limit) {
+        return Math.abs(value) > Math.abs(limit) ? limit : value;
+    }
+
+    private static double adjustPitch(double current, float pitch,
+                                      double positive, double negative, double limit) {
+        if (pitch > 1F) {
+            return Math.max(-limit, current + positive);
+        }
+        if (pitch < -1F) {
+            return Math.min(limit, current + negative);
+        }
+        return current;
     }
 
     // ========== AI ==========

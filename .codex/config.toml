@@ -1,0 +1,24 @@
+# ShinColle-Reforge project-scoped Codex configuration.
+#
+# Root/main agent is fixed to GPT-5.6 Sol.
+# Root reasoning effort is intentionally not forced here; choose the Sol effort
+# appropriate to the task in the Codex UI/CLI.
+#
+# All spawned project subagents default to GPT-5.6 Luna with Max reasoning.
+
+model = "gpt-5.6-sol"
+
+# Leave enough room for the UX-first root AGENTS.md.
+project_doc_max_bytes = 65536
+
+[agents]
+enabled = true
+default_subagent_model = "gpt-5.6-luna"
+default_subagent_reasoning_effort = "max"
+
+# Main/root thread is excluded.
+# Four concurrent children is enough for, e.g.:
+# legacy analyst + current mapper + API researcher + test/review worker.
+max_concurrent_threads_per_session = 4
+
+interrupt_message = true

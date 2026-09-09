@@ -3,6 +3,8 @@ package com.lulan.shincolle.tileentity;
 import com.lulan.shincolle.init.ModBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.Connection;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
@@ -40,7 +42,7 @@ public class TileEntityWaypoint extends BasicTileEntity implements ITileWaypoint
 
     public void setOwnerUUID(UUID uuid) {
         this.ownerUUID = uuid;
-        setChanged();
+        markChangedAndSync();
     }
 
     public int getPlayerUID() {
@@ -49,7 +51,7 @@ public class TileEntityWaypoint extends BasicTileEntity implements ITileWaypoint
 
     public void setPlayerUID(int uid) {
         this.playerUID = uid;
-        setChanged();
+        markChangedAndSync();
     }
 
     @Override
@@ -65,7 +67,7 @@ public class TileEntityWaypoint extends BasicTileEntity implements ITileWaypoint
 
     public void setNextWaypoint(BlockPos pos) {
         this.nextPos = pos != null ? pos : BlockPos.ZERO;
-        setChanged();
+        markChangedAndSync();
     }
 
     public BlockPos getLastWaypoint() {
@@ -74,7 +76,7 @@ public class TileEntityWaypoint extends BasicTileEntity implements ITileWaypoint
 
     public void setLastWaypoint(BlockPos pos) {
         this.lastPos = pos != null ? pos : BlockPos.ZERO;
-        setChanged();
+        markChangedAndSync();
     }
 
     public boolean hasNextWaypoint() {
@@ -93,7 +95,7 @@ public class TileEntityWaypoint extends BasicTileEntity implements ITileWaypoint
 
     public void setPairedChest(BlockPos pos) {
         this.chestPos = pos != null ? pos : BlockPos.ZERO;
-        setChanged();
+        markChangedAndSync();
     }
 
     public boolean hasPairedChest() {
@@ -108,7 +110,31 @@ public class TileEntityWaypoint extends BasicTileEntity implements ITileWaypoint
 
     public void setWpStayTime(int time) {
         this.wpstay = Math.max(0, Math.min(time, 16));
+        markChangedAndSync();
+    }
+
+    private void markChangedAndSync() {
         setChanged();
+        if (level != null && !level.isClientSide()) {
+            level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
+        }
+    }
+
+    @Override
+    public CompoundTag getUpdateTag() {
+        return saveWithoutMetadata();
+    }
+
+    @Override
+    public ClientboundBlockEntityDataPacket getUpdatePacket() {
+        return ClientboundBlockEntityDataPacket.create(this);
+    }
+
+    @Override
+    public void onDataPacket(Connection net, ClientboundBlockEntityDataPacket packet) {
+        if (packet.getTag() != null) {
+            load(packet.getTag());
+        }
     }
 
     // ========== NBT ==========

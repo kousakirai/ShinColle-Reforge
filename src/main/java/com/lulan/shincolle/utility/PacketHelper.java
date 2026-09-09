@@ -1,5 +1,6 @@
 package com.lulan.shincolle.utility;
 
+import io.netty.handler.codec.DecoderException;
 import net.minecraft.network.FriendlyByteBuf;
 
 import java.util.ArrayList;
@@ -35,6 +36,26 @@ public class PacketHelper {
      */
     public static int[] readIntArray(FriendlyByteBuf buf) {
         int len = buf.readVarInt();
+        int[] arr = new int[len];
+        for (int i = 0; i < len; i++) {
+            arr[i] = buf.readInt();
+        }
+        return arr;
+    }
+
+    /**
+     * Read a length-prefixed int array with an explicit packet-specific bound.
+     */
+    public static int[] readIntArray(FriendlyByteBuf buf, int maxLength) {
+        int len = buf.readVarInt();
+        if (len < 0 || len > maxLength) {
+            throw new DecoderException("Int array length " + len + " is outside allowed range 0.." + maxLength);
+        }
+        if (len > buf.readableBytes() / Integer.BYTES) {
+            throw new DecoderException("Int array length " + len
+                    + " exceeds readable payload bytes: " + buf.readableBytes());
+        }
+
         int[] arr = new int[len];
         for (int i = 0; i < len; i++) {
             arr[i] = buf.readInt();
@@ -223,6 +244,16 @@ public class PacketHelper {
     public static String readNullableString(FriendlyByteBuf buf) {
         if (buf.readBoolean()) {
             return buf.readUtf();
+        }
+        return null;
+    }
+
+    /**
+     * Read a nullable string with an explicit packet-specific character bound.
+     */
+    public static String readNullableString(FriendlyByteBuf buf, int maxChars) {
+        if (buf.readBoolean()) {
+            return buf.readUtf(maxChars);
         }
         return null;
     }

@@ -12,6 +12,7 @@ import com.lulan.shincolle.entity.BasicEntityShipHostile;
 import com.lulan.shincolle.entity.IShipAttackBase;
 import com.lulan.shincolle.entity.other.EntityFloatingFort;
 import com.lulan.shincolle.entity.other.EntityProjectileStatic;
+import com.lulan.shincolle.handler.ConfigHandler;
 import com.lulan.shincolle.init.ModBlocks;
 import com.lulan.shincolle.init.ModEntities;
 import com.lulan.shincolle.init.ModItems;
@@ -19,6 +20,8 @@ import com.lulan.shincolle.item.BasicEquip;
 import com.lulan.shincolle.item.PointerItem;
 import com.lulan.shincolle.item.ShipSpawnEgg;
 import com.lulan.shincolle.network.C2SGUIInputPacket;
+import com.lulan.shincolle.network.C2SInputPacket;
+import com.lulan.shincolle.playerskill.ShipSkillHandler;
 import com.lulan.shincolle.network.S2CGUISyncPacket;
 import com.lulan.shincolle.reference.ID;
 import com.lulan.shincolle.reference.Reference;
@@ -26,17 +29,24 @@ import com.lulan.shincolle.server.ServerDataManager;
 import com.lulan.shincolle.team.TeamData;
 import com.lulan.shincolle.tileentity.BasicTileMulti;
 import com.lulan.shincolle.tileentity.TileEntityCrane;
+import com.lulan.shincolle.tileentity.TileEntityWaypoint;
 import com.lulan.shincolle.tileentity.TileMultiGrudgeHeavy;
 import com.lulan.shincolle.utility.ClientRuntimeHelper;
 import com.lulan.shincolle.utility.CombatHelper;
 import com.lulan.shincolle.utility.MulitBlockHelper;
 import com.lulan.shincolle.utility.PacketHelper;
+import com.lulan.shincolle.utility.TeamHelper;
+import com.lulan.shincolle.utility.TargetHelper;
+import com.lulan.shincolle.utility.TileEntityHelper;
 import com.mojang.authlib.GameProfile;
 import io.netty.buffer.Unpooled;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -54,12 +64,19 @@ import net.minecraft.world.entity.ai.goal.GoalSelector;
 import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.common.util.FakePlayerFactory;
+import net.minecraftforge.fluids.FluidStack;
+import net.minecraftforge.fluids.FluidUtil;
+import net.minecraft.world.level.material.Fluids;
+import net.minecraftforge.fluids.capability.IFluidHandler;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 import net.minecraftforge.registries.RegistryObject;
@@ -395,6 +412,481 @@ public final class ShinColleEntityRegistryGameTests {
         helper.succeed();
     }
 
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void boundedC2SPacketsRoundTripValidPayloads(GameTestHelper helper) {
+        int[] values = new int[16];
+        for (int i = 0; i < values.length; i++) {
+            values[i] = i * 3 - 7;
+        }
+
+        FriendlyByteBuf inputBuf = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            new com.lulan.shincolle.network.C2SInputPacket((byte) 4, values).encode(inputBuf);
+            com.lulan.shincolle.network.C2SInputPacket decoded =
+                    new com.lulan.shincolle.network.C2SInputPacket(inputBuf);
+            if (decoded.getType() != 4 || !Arrays.equals(values, decoded.getValues())) {
+                throw new AssertionError("Bounded C2S input packet round-trip failed.");
+            }
+        } finally {
+            inputBuf.release();
+        }
+
+        FriendlyByteBuf guiBuf = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            C2SGUIInputPacket original = new C2SGUIInputPacket((byte) 36, values, "第一艦隊");
+            original.encode(guiBuf);
+            C2SGUIInputPacket decoded = new C2SGUIInputPacket(guiBuf);
+            if (decoded.getType() != 36 || !Arrays.equals(values, decoded.getValues())
+                    || !"第一艦隊".equals(decoded.getStringData())) {
+                throw new AssertionError("Bounded C2S GUI packet round-trip failed.");
+            }
+        } finally {
+            guiBuf.release();
+        }
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void boundedC2SIntArrayRejectsNegativeAndSeventeenElements(GameTestHelper helper) {
+        assertPacketDecodeRejected(buf -> {
+            buf.writeByte(0);
+            buf.writeVarInt(-1);
+        }, com.lulan.shincolle.network.C2SInputPacket::new, "negative int-array length");
+
+        assertPacketDecodeRejected(buf -> {
+            buf.writeByte(0);
+            buf.writeVarInt(17);
+        }, com.lulan.shincolle.network.C2SInputPacket::new, "17-element int array");
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void boundedC2SIntArrayRejectsInsufficientBytes(GameTestHelper helper) {
+        assertPacketDecodeRejected(buf -> {
+            buf.writeByte(0);
+            buf.writeVarInt(2);
+            buf.writeInt(123);
+        }, com.lulan.shincolle.network.C2SInputPacket::new, "truncated int array");
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void c2sInputPayloadGuardsAndHandheldBounds(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000005101"), "input_lengths");
+
+        player.getInventory().selected = 0;
+        invokeC2SInputPacket(new C2SInputPacket(C2SInputPacket.SyncHandheld, 4),
+                "handleSyncHandheld", player);
+        if (player.getInventory().selected != 4) {
+            throw new AssertionError("A one-value SyncHandheld packet must update the selected slot.");
+        }
+
+        invokeC2SInputPacket(new C2SInputPacket(C2SInputPacket.SyncHandheld, 2, 3),
+                "handleSyncHandheld", player);
+        if (player.getInventory().selected != 4) {
+            throw new AssertionError("SyncHandheld must reject extra payload values.");
+        }
+
+        invokeC2SInputPacket(new C2SInputPacket(C2SInputPacket.SyncHandheld, 9),
+                "handleSyncHandheld", player);
+        if (player.getInventory().selected != 4) {
+            throw new AssertionError("SyncHandheld must reject a slot outside the 0..8 hotbar range.");
+        }
+
+        Entity target = ModEntities.DESTROYER_I.get().create(level);
+        if (target == null) {
+            throw new AssertionError("Could not create an entity for the distance helper test.");
+        }
+        player.setPos(0.5D, level.getSharedSpawnPos().getY() + 1D, 0.5D);
+        target.setPos(4.5D, player.getY(), player.getZ());
+        if (!invokeC2SInputDistance(player, target, 8.0D)) {
+            throw new AssertionError("Distance helper must accept a target strictly inside the limit.");
+        }
+        target.setPos(8.5D, player.getY(), player.getZ());
+        if (invokeC2SInputDistance(player, target, 8.0D)) {
+            throw new AssertionError("Distance helper must reject a target outside the strict limit.");
+        }
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void playerSkillRejectsMalformedAndInvalidTypePayloads(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000005103"), "player_skill_guard");
+
+        // The public server entry point must be safe even when called with a malformed array.
+        ShipSkillHandler.handlePlayerSkill(player, null);
+        ShipSkillHandler.handlePlayerSkill(player, new int[]{0, 1, -1});
+
+        // Packet-level validation rejects both the wrong arity and an unsupported attack type.
+        invokeC2SInputPacket(new C2SInputPacket(C2SInputPacket.PlayerSkill, 0, 1, -1),
+                "handlePlayerSkill", player);
+        invokeC2SInputPacket(new C2SInputPacket(C2SInputPacket.PlayerSkill, 4, 1, -1, 0),
+                "handlePlayerSkill", player);
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void mountMoveAppliesValidInputRejectsUnknownBitsAndExpires(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000005104"), "mount_input");
+        CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
+        if (capa == null) {
+            throw new AssertionError("Player capability missing in mount input test.");
+        }
+        capa.setPlayerUID(5104);
+
+        Entity hostEntity = ModEntities.DESTROYER_I.get().create(level);
+        Entity mountEntity = ModEntities.MOUNT_BAH.get().create(level);
+        if (!(hostEntity instanceof BasicEntityShip host)
+                || !(mountEntity instanceof BasicEntityMount mount)) {
+            throw new AssertionError("Could not create mount input test entities.");
+        }
+
+        double y = level.getSharedSpawnPos().getY() + 1D;
+        host.moveTo(1.5D, y, 1.5D, 0F, 0F);
+        mount.moveTo(1.5D, y, 1.5D, 0F, 0F);
+        host.tame(player);
+        host.setOwnerUUID(player.getUUID());
+        host.setPlayerUID(5104);
+        if (!level.addFreshEntity(host) || !level.addFreshEntity(mount)) {
+            throw new AssertionError("Failed to add mount input test entities.");
+        }
+        mount.setHost(host);
+        player.stopRiding();
+        if (!player.startRiding(mount, true)) {
+            throw new AssertionError("Failed to attach controlling player to mount.");
+        }
+
+        player.setYRot(0F);
+        player.setYHeadRot(0F);
+        mount.setDeltaMovement(Vec3.ZERO);
+        invokeC2SInputPacket(new C2SInputPacket(C2SInputPacket.MountMove, 1),
+                "handleMountMove", player);
+        mount.travel(Vec3.ZERO);
+        Vec3 forwardMotion = mount.getDeltaMovement();
+        if (mount.keyPressed != 1 || mount.keyTick != 10
+                || forwardMotion.x * forwardMotion.x + forwardMotion.z * forwardMotion.z <= 0D) {
+            throw new AssertionError("Valid forward MountMove input must produce horizontal motion."
+                    + " key=" + mount.keyPressed + " keyTick=" + mount.keyTick
+                    + " motion=" + forwardMotion);
+        }
+
+        mount.setMountKeyInput(0);
+        invokeC2SInputPacket(new C2SInputPacket(C2SInputPacket.MountMove, 32),
+                "handleMountMove", player);
+        if (mount.keyPressed != 0) {
+            throw new AssertionError("MountMove must reject bits outside the canonical 0..31 mask.");
+        }
+
+        mount.setMountKeyInput(1);
+        for (int i = 0; i < 10; i++) {
+            mount.aiStep();
+        }
+        if (mount.keyTick != 0 || mount.keyPressed != 0) {
+            throw new AssertionError("Mount input must expire and clear after ten AI ticks."
+                    + " key=" + mount.keyPressed + " keyTick=" + mount.keyTick);
+        }
+
+        player.stopRiding();
+        mount.discard();
+        host.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void c2sRequestRidingRequiresOwnerAndSuccess(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000005102"), "input_riding");
+        CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
+        if (capa == null) {
+            throw new AssertionError("Player capability missing in riding packet test.");
+        }
+        capa.setPlayerUID(5102);
+
+        Entity entity = ModEntities.DESTROYER_I.get().create(level);
+        if (!(entity instanceof BasicEntityShip ship)) {
+            throw new AssertionError("Destroyer entity is not a BasicEntityShip in riding packet test.");
+        }
+        ship.moveTo(2.5D, level.getSharedSpawnPos().getY() + 1D, 0.5D, 0F, 0F);
+        ship.tame(player);
+        ship.setOwnerUUID(player.getUUID());
+        ship.setPlayerUID(5102);
+        if (!level.addFreshEntity(ship)) {
+            throw new AssertionError("Failed to add ship in riding packet test.");
+        }
+        player.setPos(0.5D, ship.getY(), 0.5D);
+        // GameTest's mock player may be reused while tests run in parallel.
+        // Ensure this fixture starts with an empty riding relationship.
+        player.stopRiding();
+        player.ejectPassengers();
+
+        invokeC2SInputPacket(new C2SInputPacket(C2SInputPacket.Request_Riding, ship.getId()),
+                "handleRequestRiding", player);
+        if (ship.getVehicle() != player) {
+            throw new AssertionError("Owned nearby ship must ride the requesting player after a valid packet."
+                    + " sameOwner=" + TeamHelper.checkSameOwner(player, ship)
+                    + " alive=" + ship.isAlive()
+                    + " distanceSq=" + player.distanceToSqr(ship)
+                    + " playerPassengers=" + player.getPassengers().size()
+                    + " shipVehicle=" + ship.getVehicle());
+        }
+
+        ship.stopRiding();
+        invokeC2SInputPacket(new C2SInputPacket(C2SInputPacket.Request_Riding, ship.getId(), 99),
+                "handleRequestRiding", player);
+        if (ship.getVehicle() == player) {
+            throw new AssertionError("Request_Riding must reject extra payload values.");
+        }
+
+        ship.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void waypointPairingUsesSenderUidInsteadOfPacketUid(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000004201"), "waypoint_spoof");
+        CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
+        if (capa == null) {
+            throw new AssertionError("Player capability missing in waypoint spoof test.");
+        }
+        capa.setPlayerUID(4201);
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(ModItems.TARGET_WRENCH.get()));
+
+        BlockPos from = helper.absolutePos(new BlockPos(1, 2, 1));
+        BlockPos to = from.east();
+        level.setBlock(from, ModBlocks.WAYPOINT.get().defaultBlockState(), 3);
+        level.setBlock(to, ModBlocks.WAYPOINT.get().defaultBlockState(), 3);
+        TileEntityWaypoint wpFrom = (TileEntityWaypoint) level.getBlockEntity(from);
+        TileEntityWaypoint wpTo = (TileEntityWaypoint) level.getBlockEntity(to);
+        wpFrom.setPlayerUID(4201);
+        wpTo.setPlayerUID(4201);
+        player.setPos(to.getX() + 0.5D, to.getY() + 1D, to.getZ() + 2D);
+
+        invokePairingPacket(new C2SInputPacket(C2SInputPacket.Request_WpSet,
+                9999, from.getX(), from.getY(), from.getZ(), to.getX(), to.getY(), to.getZ()),
+                "handleRequestWpSet", player);
+        if (!to.equals(wpFrom.getNextWaypoint())) {
+            throw new AssertionError("Waypoint pairing must derive owner UID from sender capability.");
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void waypointPairingRejectsForeignEndpoint(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000004202"), "waypoint_foreign");
+        CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
+        if (capa == null) {
+            throw new AssertionError("Player capability missing in waypoint ownership test.");
+        }
+        capa.setPlayerUID(4202);
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(ModItems.TARGET_WRENCH.get()));
+
+        BlockPos from = helper.absolutePos(new BlockPos(1, 2, 1));
+        BlockPos to = from.east();
+        level.setBlock(from, ModBlocks.WAYPOINT.get().defaultBlockState(), 3);
+        level.setBlock(to, ModBlocks.WAYPOINT.get().defaultBlockState(), 3);
+        TileEntityWaypoint wpFrom = (TileEntityWaypoint) level.getBlockEntity(from);
+        TileEntityWaypoint wpTo = (TileEntityWaypoint) level.getBlockEntity(to);
+        wpFrom.setPlayerUID(4202);
+        wpTo.setPlayerUID(4203);
+        player.setPos(to.getX() + 0.5D, to.getY() + 1D, to.getZ() + 2D);
+
+        invokePairingPacket(new C2SInputPacket(C2SInputPacket.Request_WpSet,
+                4202, from.getX(), from.getY(), from.getZ(), to.getX(), to.getY(), to.getZ()),
+                "handleRequestWpSet", player);
+        if (wpFrom.hasNextWaypoint() || wpTo.hasLastWaypoint()) {
+            throw new AssertionError("Waypoint pairing must reject a foreign endpoint.");
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void waypointPairingRejectsDistanceBeyondConfig(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000004203"), "waypoint_distance");
+        CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
+        if (capa == null) {
+            throw new AssertionError("Player capability missing in waypoint distance test.");
+        }
+        capa.setPlayerUID(4203);
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(ModItems.TARGET_WRENCH.get()));
+
+        BlockPos from = helper.absolutePos(new BlockPos(1, 2, 1));
+        BlockPos to = from.offset(ConfigHandler.pairingDistWaypoint() + 1, 0, 0);
+        if (TileEntityHelper.isWithinPairingDistance(from, to, ConfigHandler.pairingDistWaypoint())) {
+            throw new AssertionError("Waypoint pairing must reject endpoints beyond configured distance.");
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void pairingRejectsWithoutTargetWrench(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000004204"), "waypoint_no_wrench");
+        CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
+        if (capa == null) {
+            throw new AssertionError("Player capability missing in waypoint wrench test.");
+        }
+        capa.setPlayerUID(4204);
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.DIRT));
+
+        BlockPos from = helper.absolutePos(new BlockPos(1, 2, 1));
+        BlockPos to = from.east();
+        level.setBlock(from, ModBlocks.WAYPOINT.get().defaultBlockState(), 3);
+        level.setBlock(to, ModBlocks.WAYPOINT.get().defaultBlockState(), 3);
+        TileEntityWaypoint wpFrom = (TileEntityWaypoint) level.getBlockEntity(from);
+        TileEntityWaypoint wpTo = (TileEntityWaypoint) level.getBlockEntity(to);
+        wpFrom.setPlayerUID(4204);
+        wpTo.setPlayerUID(4204);
+        player.setPos(to.getX() + 0.5D, to.getY() + 1D, to.getZ() + 2D);
+
+        invokePairingPacket(new C2SInputPacket(C2SInputPacket.Request_WpSet,
+                4204, from.getX(), from.getY(), from.getZ(), to.getX(), to.getY(), to.getZ()),
+                "handleRequestWpSet", player);
+        if (wpFrom.hasNextWaypoint()) {
+            throw new AssertionError("Pairing packet must require a TargetWrench in either hand.");
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void waypointPlacementAssignsCapabilityOwner(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000004205"), "waypoint_placement");
+        CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
+        if (capa == null) {
+            throw new AssertionError("Player capability missing in waypoint placement test.");
+        }
+        capa.setPlayerUID(4205);
+        BlockPos pos = helper.absolutePos(new BlockPos(1, 2, 1));
+        level.setBlock(pos, ModBlocks.WAYPOINT.get().defaultBlockState(), 3);
+        ModBlocks.WAYPOINT.get().setPlacedBy(level, pos, level.getBlockState(pos), player,
+                new ItemStack(ModItems.WAYPOINT_BLOCK_ITEM.get()));
+        if (!(level.getBlockEntity(pos) instanceof TileEntityWaypoint waypoint)
+                || waypoint.getPlayerUID() != 4205) {
+            throw new AssertionError("Waypoint placement must assign the placer capability UID.");
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void shipTankPlaceFluidPacketRejectsWithoutTank(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000004101"), "ShipTankNoTank");
+        BlockPos pos = helper.absolutePos(new BlockPos(1, 2, 1));
+        level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+        player.setPos(pos.getX() + 0.5D, pos.getY() - 1D, pos.getZ() + 0.5D);
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.DIRT));
+
+        invokePlaceFluidPacket(new C2SInputPacket(C2SInputPacket.Request_PlaceFluid,
+                pos.getX(), pos.getY(), pos.getZ()), player);
+        if (!level.getBlockState(pos).isAir()) {
+            throw new AssertionError("PlaceFluid packet must not place fluid without a ShipTank.");
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void shipTankPlaceFluidPacketPlacesAndConsumesOneBucket(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000004102"), "ShipTankFilled");
+        BlockPos pos = helper.absolutePos(new BlockPos(1, 2, 1));
+        level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+        player.setPos(pos.getX() + 0.5D, pos.getY() - 1D, pos.getZ() + 0.5D);
+
+        ItemStack tank = ModItems.SHIP_TANK.get().getDefaultInstance();
+        IFluidHandler handler = FluidUtil.getFluidHandler(tank).resolve().orElseThrow(
+                () -> new AssertionError("ShipTank must expose an item fluid capability."));
+        handler.fill(new FluidStack(Fluids.WATER, 2000), IFluidHandler.FluidAction.EXECUTE);
+        player.setItemInHand(InteractionHand.MAIN_HAND, tank);
+
+        invokePlaceFluidPacket(new C2SInputPacket(C2SInputPacket.Request_PlaceFluid,
+                pos.getX(), pos.getY(), pos.getZ()), player);
+        if (!level.getBlockState(pos).is(Blocks.WATER)) {
+            throw new AssertionError("Filled ShipTank packet must place its contained fluid.");
+        }
+        FluidStack remaining = handler.drain(Integer.MAX_VALUE, IFluidHandler.FluidAction.SIMULATE);
+        if (remaining.getAmount() != 1000) {
+            throw new AssertionError("Fluid placement must consume exactly 1000mB; remaining="
+                    + remaining.getAmount());
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void shipTankPlaceFluidPacketRejectsEmptyTank(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000004103"), "ShipTankEmpty");
+        BlockPos pos = helper.absolutePos(new BlockPos(1, 2, 1));
+        level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+        player.setPos(pos.getX() + 0.5D, pos.getY() - 1D, pos.getZ() + 0.5D);
+        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.SHIP_TANK.get().getDefaultInstance());
+
+        invokePlaceFluidPacket(new C2SInputPacket(C2SInputPacket.Request_PlaceFluid,
+                pos.getX(), pos.getY(), pos.getZ()), player);
+        if (!level.getBlockState(pos).isAir()) {
+            throw new AssertionError("Empty ShipTank packet must not place fluid.");
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void shipTankUseOnPicksUpVanillaWaterSource(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000004104"), "ShipTankUseOn");
+        BlockPos pos = helper.absolutePos(new BlockPos(1, 2, 1));
+        level.setBlock(pos, Blocks.WATER.defaultBlockState(), 3);
+        player.setPos(pos.getX() + 0.5D, pos.getY() - 1D, pos.getZ() + 0.5D);
+        ItemStack tank = ModItems.SHIP_TANK.get().getDefaultInstance();
+        player.setItemInHand(InteractionHand.MAIN_HAND, tank);
+
+        BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false);
+        InteractionResult result = tank.getItem().useOn(
+                new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND, hit));
+        if (!result.consumesAction() || !level.getBlockState(pos).isAir()) {
+            throw new AssertionError("ShipTank.useOn must pick up a vanilla water source.");
+        }
+        FluidStack contained = FluidUtil.getFluidContained(player.getMainHandItem()).orElseThrow(
+                () -> new AssertionError("ShipTank.useOn must retain picked-up fluid."));
+        if (contained.getAmount() != 1000 || contained.getFluid() != Fluids.WATER) {
+            throw new AssertionError("ShipTank.useOn pickup must store exactly 1000mB of water.");
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void boundedC2SGuiRejectsStringOver256Characters(GameTestHelper helper) {
+        assertPacketDecodeRejected(buf -> {
+            buf.writeByte(C2SGUIInputPacket.SetUnitName);
+            PacketHelper.writeIntArray(buf, new int[0]);
+            PacketHelper.writeNullableString(buf, "x".repeat(257));
+        }, C2SGUIInputPacket::new, "257-character nullable string");
+
+        helper.succeed();
+    }
+
     // 2026/04/12：GitHub Copilotによって確認済み
     @GameTest(template = "empty", templateNamespace = "minecraft")
     public static void craneTileBtnAppliesExplicitValues(GameTestHelper helper) {
@@ -465,6 +957,7 @@ public final class ShinColleEntityRegistryGameTests {
         ServerPlayer player = createFollowTestOwner(helper, level,
                 UUID.fromString("00000000-0000-0000-0000-000000000009"),
                 "shincolle_ship_inv_page");
+        player.moveTo(0.5D, level.getSharedSpawnPos().getY() + 1D, 0.5D, 0F, 0F);
 
         Entity entity = ModEntities.BB_KONGOU.get().create(level);
         if (!(entity instanceof BasicEntityShip ship)) {
@@ -474,10 +967,24 @@ public final class ShinColleEntityRegistryGameTests {
         if (!level.addFreshEntity(ship)) {
             throw new AssertionError("Failed to add ship for inventory-page packet test.");
         }
+        ship.tame(player);
+        ship.setOwnerUUID(player.getUUID());
+        CapaTeitoku playerCapa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
+        if (playerCapa == null) {
+            throw new AssertionError("Inventory-page packet test player capability missing.");
+        }
+        playerCapa.setPlayerUID(901);
+        ship.setPlayerUID(901);
+        if (!TeamHelper.checkSameOwner(player, ship)) {
+            throw new AssertionError("Inventory-page packet test requires matching owner PlayerUIDs.");
+        }
 
         ship.openGUI(player);
         if (!(player.containerMenu instanceof ContainerShipInventory menu)) {
             throw new AssertionError("Ship GUI should open ContainerShipInventory in inventory-page packet test.");
+        }
+        if (menu.getShip() != ship || !menu.stillValid(player)) {
+            throw new AssertionError("Inventory-page packet test must keep the exact ship menu valid.");
         }
 
         C2SGUIInputPacket packet = new C2SGUIInputPacket(
@@ -930,6 +1437,81 @@ public final class ShinColleEntityRegistryGameTests {
         helper.succeed();
     }
 
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void shipAiSelectorRefreshDefersGuiFlagChangesUntilNextAiStep(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        Entity entity = ModEntities.DESTROYER_I.get().create(level);
+        if (!(entity instanceof BasicEntityShip ship)) {
+            throw new AssertionError("DESTROYER_I is not BasicEntityShip in deferred AI refresh test.");
+        }
+
+        ship.moveTo(0.5D, level.getSharedSpawnPos().getY() + 1D, 0.5D, 0F, 0F);
+        ship.setStateMinor(ID.M.NumGrudge, 1000);
+        if (!level.addFreshEntity(ship)) {
+            throw new AssertionError("Failed to add ship for deferred AI refresh test.");
+        }
+
+        invokeNoArgProtected(ship, "clearAITasks");
+        invokeNoArgProtected(ship, "setAIList");
+        invokeNoArgProtected(ship, "clearAITargetTasks");
+        invokeNoArgProtected(ship, "setAITargetList");
+
+        GoalSelector goals = extractGoalSelector(ship);
+        GoalSelector targets = extractTargetSelector(ship);
+        assertGoalState(goals, ShipAttackOnCollideGoal.class, -1, 0, "initial melee selector");
+        assertGoalState(goals, ShipRangeAttackGoal.class, 11, 1, "initial range attack selector");
+        assertGoalState(targets, ShipRangeTargetGoal.class, 5, 1, "initial active target selector");
+
+        C2SGUIInputPacket.applyShipGUIButton(ship, ID.B.ShipInv_Melee, 1);
+        assertGoalState(goals, ShipAttackOnCollideGoal.class, -1, 0,
+                "melee selector must not change during GUI update");
+        ship.aiStep();
+        assertGoalState(goals, ShipAttackOnCollideGoal.class, 15, 1,
+                "melee selector after deferred refresh");
+        assertGoalState(goals, ShipRangeAttackGoal.class, 11, 1,
+                "range attack must survive melee selector refresh");
+        ship.aiStep();
+        assertGoalState(goals, ShipAttackOnCollideGoal.class, 15, 1,
+                "second AI step must not duplicate melee goal");
+
+        C2SGUIInputPacket.applyShipGUIButton(ship, ID.B.ShipInv_Melee, 0);
+        assertGoalState(goals, ShipAttackOnCollideGoal.class, 15, 1,
+                "melee removal must not change selector during GUI update");
+        ship.aiStep();
+        assertGoalState(goals, ShipAttackOnCollideGoal.class, -1, 0,
+                "melee selector after deferred removal");
+        ship.aiStep();
+        assertGoalState(goals, ShipAttackOnCollideGoal.class, -1, 0,
+                "second AI step must not restore removed melee goal");
+
+        C2SGUIInputPacket.applyShipGUIButton(ship, ID.B.ShipInv_TarAI, 1);
+        assertGoalState(targets, ShipRangeTargetGoal.class, 5, 1,
+                "passive target update must not change selector during GUI update");
+        ship.aiStep();
+        assertGoalState(targets, ShipRevengeTargetGoal.class, 1, 1,
+                "passive target selector revenge goal");
+        assertGoalState(targets, ShipRangeTargetGoal.class, -1, 0,
+                "passive target selector must exclude range targeting");
+        ship.aiStep();
+        assertGoalState(targets, ShipRevengeTargetGoal.class, 1, 1,
+                "second AI step must not duplicate passive revenge goal");
+
+        C2SGUIInputPacket.applyShipGUIButton(ship, ID.B.ShipInv_TarAI, 0);
+        assertGoalState(targets, ShipRangeTargetGoal.class, -1, 0,
+                "active target restoration must not change selector during GUI update");
+        ship.aiStep();
+        assertGoalState(targets, ShipRevengeTargetGoal.class, 1, 1,
+                "active target selector revenge goal");
+        assertGoalState(targets, ShipRangeTargetGoal.class, 5, 1,
+                "active target selector range goal");
+        ship.aiStep();
+        assertGoalState(targets, ShipRangeTargetGoal.class, 5, 1,
+                "second AI step must not duplicate active range target goal");
+
+        ship.discard();
+        helper.succeed();
+    }
+
     // 2026/04/15：GitHub Copilotによって追加
     @GameTest(template = "empty", templateNamespace = "minecraft")
     public static void mountFollowHostTeleportsWhenFarAndUnridden(GameTestHelper helper) {
@@ -1281,8 +1863,16 @@ public final class ShinColleEntityRegistryGameTests {
             throw new AssertionError("BB_KIRISHIMA_MOB is not BasicEntityShipHostile in friendly target-acquire test.");
         }
 
-        friendly.moveTo(0.5D, level.getSharedSpawnPos().getY() + 1D, 0.5D, 0F, 0F);
-        hostile.moveTo(4.5D, level.getSharedSpawnPos().getY() + 1D, 0.5D, 0F, 0F);
+        BlockPos friendlyPos = helper.absolutePos(new BlockPos(1, 2, 1));
+        BlockPos hostilePos = helper.absolutePos(new BlockPos(1, 2, 2));
+        for (int localY = 2; localY <= 4; localY++) {
+            level.setBlock(helper.absolutePos(new BlockPos(1, localY, 1)),
+                    Blocks.AIR.defaultBlockState(), 3);
+            level.setBlock(helper.absolutePos(new BlockPos(1, localY, 2)),
+                    Blocks.AIR.defaultBlockState(), 3);
+        }
+        friendly.moveTo(friendlyPos.getX() + 0.5D, friendlyPos.getY(), friendlyPos.getZ() + 0.5D, 0F, 0F);
+        hostile.moveTo(hostilePos.getX() + 0.5D, hostilePos.getY(), hostilePos.getZ() + 0.5D, 0F, 0F);
 
         if (!level.addFreshEntity(friendly)) {
             throw new AssertionError("Failed to add friendly ship for friendly target-acquire test.");
@@ -1308,13 +1898,23 @@ public final class ShinColleEntityRegistryGameTests {
         }
 
         if (!rangeGoal.canUse()) {
-            throw new AssertionError("Friendly ShipRangeTargetGoal failed to acquire nearby hostile ship.");
+            boolean selectorAccepts = new TargetHelper.Selector(friendly).test(hostile);
+            boolean lineOfSight = friendly.getSensing().hasLineOfSight(hostile);
+            float attackRange = friendly.getAttrs().getAttackRange();
+            throw new AssertionError("Friendly ShipRangeTargetGoal failed to acquire nearby hostile ship."
+                    + " selector=" + selectorAccepts
+                    + " lineOfSight=" + lineOfSight
+                    + " distanceSq=" + friendly.distanceToSqr(hostile)
+                    + " attackRange=" + attackRange
+                    + " friendlyPos=" + friendly.blockPosition()
+                    + " hostilePos=" + hostile.blockPosition());
         }
 
         rangeGoal.start();
         LivingEntity selected = friendly.getTarget();
-        if (!(selected instanceof BasicEntityShipHostile)) {
-            throw new AssertionError("Friendly acquired unexpected target type. expected=hostile ship actual="
+        if (selected != hostile) {
+            throw new AssertionError("Friendly acquired unexpected target. expected="
+                    + hostile.getType().toShortString() + " actual="
                     + (selected == null ? "null" : selected.getType().toShortString()));
         }
 
@@ -1444,6 +2044,371 @@ public final class ShinColleEntityRegistryGameTests {
         helper.succeed();
     }
 
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void mountMoveInputValidatesBitsMovesAndDecays(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer rider = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000005104"), "mount_input");
+        CapaTeitoku riderCapa = rider.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
+        if (riderCapa == null) {
+            throw new AssertionError("Mount input test player capability missing.");
+        }
+        riderCapa.setPlayerUID(5104);
+
+        Entity hostEntity = ModEntities.BB_KONGOU.get().create(level);
+        Entity mountEntity = ModEntities.MOUNT_BAH.get().create(level);
+        if (!(hostEntity instanceof BasicEntityShip host)
+                || !(mountEntity instanceof BasicEntityMount mount)) {
+            throw new AssertionError("Mount input test entities have unexpected types.");
+        }
+
+        BlockPos origin = helper.absolutePos(new BlockPos(1, 2, 1));
+        double x = origin.getX() + 0.5D;
+        double y = origin.getY() + 1.0D;
+        double z = origin.getZ() + 0.5D;
+        host.moveTo(x, y, z, 0F, 0F);
+        mount.moveTo(x, y, z, 0F, 0F);
+        rider.moveTo(x, y, z, 0F, 0F);
+        host.tame(rider);
+        host.setOwnerUUID(rider.getUUID());
+        host.setPlayerUID(5104);
+        host.setStateFlag(ID.F.NoFuel, false);
+        if (!level.addFreshEntity(host) || !level.addFreshEntity(mount)) {
+            throw new AssertionError("Failed to add mount input test entities.");
+        }
+        mount.setHost(host);
+        if (!rider.startRiding(mount, true)) {
+            throw new AssertionError("Mount input test rider failed to mount.");
+        }
+
+        invokeC2SInputPacket(new C2SInputPacket(C2SInputPacket.MountMove, 1),
+                "handleMountMove", rider);
+        if (mount.keyPressed != 1 || mount.keyTick != 10) {
+            throw new AssertionError("Valid forward MountMove must set the ten-tick input lease.");
+        }
+        invokeC2SInputPacket(new C2SInputPacket(C2SInputPacket.MountMove, 32),
+                "handleMountMove", rider);
+        if (mount.keyPressed != 1 || mount.keyTick != 10) {
+            throw new AssertionError("Unknown MountMove bits must be rejected without changing state.");
+        }
+
+        double initialX = mount.getX();
+        double initialZ = mount.getZ();
+        mount.tick();
+        if (Math.hypot(mount.getX() - initialX, mount.getZ() - initialZ) <= 0D) {
+            throw new AssertionError("Valid forward MountMove must create horizontal movement.");
+        }
+        for (int i = 0; i < 9; i++) {
+            mount.tick();
+        }
+        if (mount.keyTick != 0 || mount.keyPressed != 0) {
+            throw new AssertionError("Mount input lease must decay and clear after ten ticks.");
+        }
+
+        rider.stopRiding();
+        mount.discard();
+        host.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void shipGuiPacketRequiresOwnerMatchingMenuAndValidValue(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer owner = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000000029"), "ship_gui_owner");
+        ServerPlayer stranger = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000000030"), "ship_gui_stranger");
+        if (owner == stranger || owner.getUUID().equals(stranger.getUUID())) {
+            throw new AssertionError("GUI authority test requires distinct owner and stranger players.");
+        }
+        owner.moveTo(0.5D, level.getSharedSpawnPos().getY() + 1D, 0.5D, 0F, 0F);
+        stranger.moveTo(0.5D, level.getSharedSpawnPos().getY() + 1D, 0.5D, 0F, 0F);
+
+        Entity entity = ModEntities.BB_KONGOU.get().create(level);
+        if (!(entity instanceof BasicEntityShip ship) || !level.addFreshEntity(ship)) {
+            throw new AssertionError("Failed to create ship for GUI authority test.");
+        }
+        ship.moveTo(1.5D, level.getSharedSpawnPos().getY() + 1D, 0.5D, 0F, 0F);
+        ship.tame(owner);
+        ship.setOwnerUUID(owner.getUUID());
+        CapaTeitoku ownerCapa = owner.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
+        if (ownerCapa == null) {
+            throw new AssertionError("GUI authority test owner capability missing.");
+        }
+        ownerCapa.setPlayerUID(2901);
+        ship.setPlayerUID(2901);
+        if (!TeamHelper.checkSameOwner(owner, ship)) {
+            throw new AssertionError("GUI authority test owner and ship PlayerUIDs must match.");
+        }
+
+        C2SGUIInputPacket enableMelee = new C2SGUIInputPacket(C2SGUIInputPacket.ShipBtn,
+                new int[]{ship.getId(), 0, ID.B.ShipInv_Melee, 1});
+        invokePacketHandler(enableMelee, "handleShipBtn", stranger);
+        if (ship.getStateFlag(ID.F.UseMelee)) {
+            throw new AssertionError("A non-owner must not mutate a ship GUI setting.");
+        }
+        invokePacketHandler(enableMelee, "handleShipBtn", owner);
+        if (ship.getStateFlag(ID.F.UseMelee)) {
+            throw new AssertionError("An owner without the exact ship menu must be rejected.");
+        }
+
+        ship.openGUI(owner);
+        if (!(owner.containerMenu instanceof ContainerShipInventory menu) || menu.getShip() != ship) {
+            throw new AssertionError("GUI authority test must open the exact ship inventory menu.");
+        }
+        if (!menu.stillValid(owner)) {
+            throw new AssertionError("GUI authority test owner must be within the ship menu interaction range.");
+        }
+        invokePacketHandler(enableMelee, "handleShipBtn", owner);
+        if (!ship.getStateFlag(ID.F.UseMelee)) {
+            throw new AssertionError("An owner with the matching ship menu should update a valid setting.");
+        }
+
+        C2SGUIInputPacket invalidFollowMin = new C2SGUIInputPacket(C2SGUIInputPacket.ShipBtn,
+                new int[]{ship.getId(), 0, ID.B.ShipInv_FollowMin, 999});
+        int followMin = ship.getStateMinor(ID.M.FollowMin);
+        invokePacketHandler(invalidFollowMin, "handleShipBtn", owner);
+        if (ship.getStateMinor(ID.M.FollowMin) != followMin) {
+            throw new AssertionError("Out-of-range ship GUI values must be rejected.");
+        }
+
+        owner.closeContainer();
+        ship.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void remoteShipOpenAndHitPacketsAreRejected(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer owner = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000000031"), "remote_ship_owner");
+        owner.moveTo(0.5D, level.getSharedSpawnPos().getY() + 1D, 0.5D, 0F, 0F);
+
+        Entity entity = ModEntities.BB_KONGOU.get().create(level);
+        if (!(entity instanceof BasicEntityShip ship) || !level.addFreshEntity(ship)) {
+            throw new AssertionError("Failed to create ship for remote packet test.");
+        }
+        ship.moveTo(32.5D, level.getSharedSpawnPos().getY() + 1D, 0.5D, 0F, 0F);
+        ship.tame(owner);
+        ship.setOwnerUUID(owner.getUUID());
+        ship.setStateMinor(ID.M.HitHeight, 40);
+        ship.setStateMinor(ID.M.HitAngle, 80);
+
+        invokePacketHandler(new C2SGUIInputPacket(C2SGUIInputPacket.OpenShipGUI,
+                new int[]{owner.getId(), 0, ship.getId()}), "handleOpenShipGUI", owner);
+        if (owner.containerMenu instanceof ContainerShipInventory) {
+            throw new AssertionError("Remote ship GUI packet must not open a container.");
+        }
+        invokePacketHandler(new C2SGUIInputPacket(C2SGUIInputPacket.HitHeight,
+                new int[]{owner.getId(), 0, ship.getId(), 999, -1}), "handleHitHeight", owner);
+        if (ship.getStateMinor(ID.M.HitHeight) != 40 || ship.getStateMinor(ID.M.HitAngle) != 80) {
+            throw new AssertionError("Remote hit-state packet must not mutate the ship.");
+        }
+
+        ship.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void formationPacketRejectsDifferentTeamIndex(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000000032"), "formation_authority");
+        CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
+        if (capa == null) {
+            throw new AssertionError("Player capability missing in formation authority test.");
+        }
+        capa.setSelectTeam(0);
+        capa.setFormatID(1, 0);
+
+        invokePacketHandler(new C2SGUIInputPacket(C2SGUIInputPacket.SetFormation,
+                new int[]{player.getId(), 1, 5}), "handleSetFormation", player);
+        if (capa.getFormatID(1) != 0) {
+            throw new AssertionError("Formation packet must not change a non-selected team.");
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void tileButtonPacketRequiresMatchingOpenMenu(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000000033"), "tile_menu_authority");
+        BlockPos pos = level.getSharedSpawnPos().above();
+        player.moveTo(pos.getX() + 0.5D, pos.getY() + 1D, pos.getZ() + 2.5D, 0F, 0F);
+        level.setBlock(pos, ModBlocks.CRANE.get().defaultBlockState(), 3);
+        if (!(level.getBlockEntity(pos) instanceof TileEntityCrane crane)) {
+            throw new AssertionError("Crane block did not create its expected block entity.");
+        }
+
+        invokePacketHandler(new C2SGUIInputPacket(C2SGUIInputPacket.TileBtn,
+                new int[]{0, pos.getX(), pos.getY(), pos.getZ(), ID.B.Crane_Power, 1}),
+                "handleTileBtn", player);
+        if (crane.isActive()) {
+            throw new AssertionError("Tile button packet without the exact open menu must be rejected.");
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void teamMoveRejectsStaleForeignShipReference(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000000034"), "team_owner");
+        ServerPlayer foreignOwner = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000000035"), "foreign_owner");
+        player.moveTo(0.5D, level.getSharedSpawnPos().getY() + 1D, 0.5D, 0F, 0F);
+
+        Entity entity = ModEntities.BB_KONGOU.get().create(level);
+        if (!(entity instanceof BasicEntityShip ship) || !level.addFreshEntity(ship)) {
+            throw new AssertionError("Failed to create foreign ship for stale-team test.");
+        }
+        ship.moveTo(2.5D, level.getSharedSpawnPos().getY() + 1D, 0.5D, 0F, 0F);
+        ship.tame(foreignOwner);
+        ship.setOwnerUUID(foreignOwner.getUUID());
+        ship.setStateMinor(ID.M.GuardX, 7);
+
+        CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
+        if (capa == null) {
+            throw new AssertionError("Player capability missing in stale-team test.");
+        }
+        capa.setSelectTeam(0);
+        capa.setTeamSID(0, 0, ship.getId());
+        capa.setTeamMember(0, 0, 12345);
+        invokePacketHandler(new C2SGUIInputPacket(C2SGUIInputPacket.SetMove,
+                new int[]{player.getId(), 0, 2, 1, 30, 70, 30}), "handleSetMove", player);
+        if (ship.getStateMinor(ID.M.GuardX) != 7) {
+            throw new AssertionError("A stale foreign team entity reference must not receive move commands.");
+        }
+
+        ship.discard();
+        helper.succeed();
+    }
+
+    // ========== Formation persistence ==========
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void formationCapabilityRoundTripPersistsUidNotRuntimeId(GameTestHelper helper) {
+        CapaTeitoku source = new CapaTeitoku();
+        source.setTeamMember(2, 3, 4101);
+        source.setTeamSID(2, 3, 91);
+        source.setSelectState(2, 3, true);
+
+        CompoundTag saved = source.serializeNBT();
+        CompoundTag team = saved.getList("Teams", Tag.TAG_COMPOUND).getCompound(2);
+        if (!team.contains("ShipUIDs", Tag.TAG_INT_ARRAY)
+                || team.contains("EIDs") || team.contains("SIDs")) {
+            throw new AssertionError("Formation save must write ShipUIDs only, never runtime entity IDs.");
+        }
+
+        CapaTeitoku restored = new CapaTeitoku();
+        restored.deserializeNBT(saved);
+        if (restored.getTeamMember(2, 3) != 4101 || restored.getTeamSID(2, 3) != -1) {
+            throw new AssertionError("Formation round-trip must retain Ship UID and clear runtime entity ID.");
+        }
+        if (!restored.getSelectState(2, 3)) {
+            throw new AssertionError("Formation round-trip must retain persisted selection state.");
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void formationLegacyTargetSchemaMigratesEidsAsShipUids(GameTestHelper helper) {
+        CompoundTag saved = new CompoundTag();
+        ListTag teams = new ListTag();
+        for (int teamIndex = 0; teamIndex < CapaTeitoku.TEAM_NUM; teamIndex++) {
+            CompoundTag team = new CompoundTag();
+            if (teamIndex == 0) {
+                team.putIntArray("EIDs", new int[]{4201, -1, -1, -1, -1, -1});
+                team.putIntArray("SIDs", new int[]{777, -1, -1, -1, -1, -1});
+            }
+            teams.add(team);
+        }
+        saved.put("Teams", teams);
+
+        CapaTeitoku restored = new CapaTeitoku();
+        restored.deserializeNBT(saved);
+        if (restored.getTeamMember(0, 0) != 4201 || restored.getTeamSID(0, 0) != -1) {
+            throw new AssertionError("Legacy target EIDs must migrate as Ship UIDs and discard stale SIDs.");
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void formationRelinkPreservesUnresolvedUid(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000000051"), "formation_unresolved");
+        CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
+        if (capa == null) {
+            throw new AssertionError("Player Teitoku capability was not attached.");
+        }
+
+        capa.setTeamMember(0, 0, 990001);
+        capa.setTeamSID(0, 0, 123456);
+        TeamHelper.relinkAllTeamRuntimeState(player, capa);
+
+        if (capa.getTeamMember(0, 0) != 990001 || capa.getTeamSID(0, 0) != -1) {
+            throw new AssertionError("Unresolved formation Ship UID must survive while runtime ID is cleared.");
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void formationRelinkDerivesRuntimeIdFromShipUid(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ServerPlayer player = createFollowTestOwner(helper, level,
+                UUID.fromString("00000000-0000-0000-0000-000000000052"), "formation_relink");
+        CapaTeitoku capa = player.getCapability(CapaTeitokuProvider.CAPABILITY).orElse(null);
+        if (capa == null) {
+            throw new AssertionError("Player Teitoku capability was not attached.");
+        }
+        capa.setPlayerUID(5201);
+
+        Entity entity = ModEntities.DESTROYER_I.get().create(level);
+        if (!(entity instanceof BasicEntityShip ship)) {
+            throw new AssertionError("destroyer_i is not BasicEntityShip in formation relink test.");
+        }
+        ship.moveTo(0.5D, level.getSharedSpawnPos().getY() + 1D, 0.5D, 0F, 0F);
+        ship.setOwnerUUID(player.getUUID());
+        ship.setPlayerUID(5201);
+        ship.setShipUID(5202);
+        if (!level.addFreshEntity(ship)) {
+            throw new AssertionError("Failed to add ship for formation relink test.");
+        }
+        ServerDataManager.updateShipID(ship);
+
+        capa.setTeamMember(0, 0, 5202);
+        capa.setTeamSID(0, 0, 999999);
+        TeamHelper.relinkAllTeamRuntimeState(player, capa);
+
+        if (capa.getTeamSID(0, 0) != ship.getId()
+                || capa.getShipEntityCurrentTeam(0) != ship) {
+            throw new AssertionError("Formation relink must derive live entity ID/reference from Ship UID.");
+        }
+        ship.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft")
+    public static void formationCloneCopiesUidButNotRuntimeId(GameTestHelper helper) {
+        CapaTeitoku original = new CapaTeitoku();
+        original.setTeamMember(4, 2, 4301);
+        original.setTeamSID(4, 2, 88);
+        original.setSelectState(4, 2, true);
+        original.setFormatID(4, 3);
+        original.setUnitName(4, "Clone Fleet");
+
+        CapaTeitoku clone = new CapaTeitoku();
+        clone.copyFrom(original);
+        if (clone.getTeamMember(4, 2) != 4301 || clone.getTeamSID(4, 2) != -1
+                || !clone.getSelectState(4, 2) || clone.getFormatID(4) != 3
+                || !"Clone Fleet".equals(clone.getUnitName(4))) {
+            throw new AssertionError("Clone must copy persistent formation state but clear runtime entity IDs.");
+        }
+        helper.succeed();
+    }
+
     private static ServerPlayer createFollowTestOwner(GameTestHelper helper, ServerLevel level, UUID uuid,
                                                       String name) {
         try {
@@ -1531,6 +2496,22 @@ public final class ShinColleEntityRegistryGameTests {
         return bestPriority == Integer.MAX_VALUE ? -1 : bestPriority;
     }
 
+    private static void assertGoalState(GoalSelector selector, Class<? extends Goal> goalClass,
+                                        int expectedPriority, int expectedCount, String context) {
+        int count = 0;
+        for (WrappedGoal wrappedGoal : selector.getAvailableGoals()) {
+            if (goalClass.isInstance(wrappedGoal.getGoal())) {
+                count++;
+            }
+        }
+
+        int priority = findGoalPriority(selector, goalClass);
+        if (priority != expectedPriority || count != expectedCount) {
+            throw new AssertionError(context + ": expected priority/count=" + expectedPriority + "/"
+                    + expectedCount + " actual=" + priority + "/" + count);
+        }
+    }
+
     private static void invokePacketHandler(C2SGUIInputPacket packet, String methodName, ServerPlayer player) {
         try {
             Method method = C2SGUIInputPacket.class.getDeclaredMethod(methodName, ServerPlayer.class);
@@ -1538,6 +2519,66 @@ public final class ShinColleEntityRegistryGameTests {
             method.invoke(packet, player);
         } catch (ReflectiveOperationException e) {
             throw new AssertionError("Failed to invoke packet handler method: " + methodName, e);
+        }
+    }
+
+    private static void invokeC2SInputPacket(C2SInputPacket packet, String methodName, ServerPlayer player) {
+        try {
+            Method method = C2SInputPacket.class.getDeclaredMethod(methodName, ServerPlayer.class);
+            method.setAccessible(true);
+            method.invoke(packet, player);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("Failed to invoke C2S input packet handler: " + methodName, e);
+        }
+    }
+
+    private static boolean invokeC2SInputDistance(Entity first, Entity second, double distance) {
+        try {
+            Method method = C2SInputPacket.class.getDeclaredMethod(
+                    "isWithinDistance", Entity.class, Entity.class, double.class);
+            method.setAccessible(true);
+            return (Boolean) method.invoke(null, first, second, distance);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("Failed to invoke C2S input distance helper.", e);
+        }
+    }
+
+    private static void invokePlaceFluidPacket(C2SInputPacket packet, ServerPlayer player) {
+        try {
+            Method method = C2SInputPacket.class.getDeclaredMethod("handleRequestPlaceFluid", ServerPlayer.class);
+            method.setAccessible(true);
+            method.invoke(packet, player);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("Failed to invoke PlaceFluid packet handler.", e);
+        }
+    }
+
+    private static void invokePairingPacket(C2SInputPacket packet, String methodName,
+                                             ServerPlayer player) {
+        try {
+            Method method = C2SInputPacket.class.getDeclaredMethod(methodName, ServerPlayer.class);
+            method.setAccessible(true);
+            method.invoke(packet, player);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("Failed to invoke pairing packet handler: " + methodName, e);
+        }
+    }
+
+    private static void assertPacketDecodeRejected(
+            java.util.function.Consumer<FriendlyByteBuf> writer,
+            java.util.function.Consumer<FriendlyByteBuf> decoder,
+            String description) {
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            writer.accept(buf);
+            try {
+                decoder.accept(buf);
+                throw new AssertionError("Invalid C2S payload was accepted: " + description);
+            } catch (io.netty.handler.codec.DecoderException expected) {
+                // Expected decode-boundary rejection.
+            }
+        } finally {
+            buf.release();
         }
     }
 

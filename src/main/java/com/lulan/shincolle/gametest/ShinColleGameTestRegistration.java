@@ -17,7 +17,7 @@ public final class ShinColleGameTestRegistration {
     public static void registerGameTests(RegisterGameTestsEvent event) {
         event.register(ShinColleEntityRegistryGameTests.class);
         event.register(ShinColleShipStateGameTests.class);
-        event.register(ShinColleShipStateGameTests.class);
+        event.register(ShinColleCombatGameTests.class);
 
     }
 }
