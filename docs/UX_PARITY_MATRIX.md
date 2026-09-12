@@ -4,6 +4,8 @@ This is a living development document.
 
 Initial status values are intentionally conservative.
 
+Status values: `NOT_AUDITED`, `IN_PROGRESS`, `PARITY_CANDIDATE`, `VERIFIED`, and `KNOWN_DIFFERENCE`.
+
 | Area | Feature | Legacy reference | Current reference | Status | Automated check | Manual/in-game check | Notes |
 |---|---|---|---|---|---|---|---|
 | AI | Follow owner | `EntityAIShipFollowOwner` | `ShipFollowOwnerGoal` | NOT_AUDITED | TODO | TODO | Brain migration may replace current Goal |
@@ -15,11 +17,13 @@ Initial status values are intentionally conservative.
 | AI | Pick item | `EntityAIShipPickItem` | `ShipPickItemGoal` | NOT_AUDITED | TODO | TODO | Check Goal blocking interactions |
 | AI | Revenge target | `EntityAIShipRevengeTarget` | `ShipRevengeTargetGoal` | NOT_AUDITED | TODO | TODO | |
 | AI | Range target | `EntityAIShipRangeTarget` | `ShipRangeTargetGoal` | NOT_AUDITED | TODO | TODO | |
-| Combat | Ranged attack | `EntityAIShipRangeAttack` | `ShipRangeAttackGoal` | NOT_AUDITED | TODO | TODO | Range/cadence/LOS/positioning |
+| AI | Fuel-driven selector lifecycle | legacy `BasicEntityShip` fuel/task refresh | deferred refresh in `BasicEntityShip.aiStep` | PARITY_CANDIDATE | Selector refresh GameTest passes | TODO: exhaust/refuel during active combat | Fuel changes apply at the next safe server AI boundary; running Goals are stopped before replacement |
+| Combat | Ranged attack | `EntityAIShipRangeAttack` | `ShipRangeAttackGoal` | IN_PROGRESS | Compile/build + regression suite | TODO: UseMelee chase + cannon animation/particles | Restored legacy strict range boundary, 32-tick pursuit refresh, 64-tick combat-parameter refresh, and attacker/target feedback; movement feel and LOS timing still need in-game verification |
 | Combat | Melee/collide attack | `EntityAIShipAttackOnCollide` | `ShipAttackOnCollideGoal` | NOT_AUDITED | TODO | TODO | |
 | Combat | Skill attack | `EntityAIShipSkillAttack` | `ShipSkillAttackGoal` | NOT_AUDITED | TODO | TODO | |
-| Carrier | Carrier attack | `EntityAIShipCarrierAttack` | `ShipCarrierAttackGoal` | NOT_AUDITED | TODO | TODO | |
-| Aircraft | Aircraft attack | `EntityAIShipAircraftAttack` | `ShipAircraftAttackGoal` | NOT_AUDITED | TODO | TODO | |
+| Carrier | Carrier attack | `EntityAIShipCarrierAttack` | `ShipCarrierAttackGoal` | IN_PROGRESS | Hostile carrier GoalSelector launch GameTest passes | TODO: visually confirm Akagi/Kaga launch timing and positioning | Restored legacy strict range boundary, 32-tick pursuit refresh, 64-tick combat-parameter refresh, hostile 10/10 effective aircraft stock, launch height, and Akagi/Kaga carrier Goal |
+| Aircraft | Aircraft attack | `EntityAIShipAircraftAttack` | `ShipAircraftAttackGoal` | IN_PROGRESS | Compile + hostile carrier launch GameTest | TODO: launch target retention, 16-tick retarget cadence, return-to-host behavior | Preserves the launch target across selector rebuild, scans every 16 ticks, and falls back to the live host target |
+| Combat | Attack result text | `ParticleHelper.spawnAttackTextParticle` / `ParticleTexts` | same symbols | PARITY_CANDIDATE | Compile + texture hash comparison | TODO: inspect Miss/Critical/Double/Triple/Dodge at normal and near-camera distances | Restored the legacy server-side packet condition; texture and world-space quad dimensions match legacy, so close-camera scaling was not altered |
 | AI | Watch closest | `EntityAIShipWatchClosest` | vanilla/custom look Goal in current ship setup | NOT_AUDITED | TODO | TODO | Verify exact modern owner |
 | AI | Look idle | `EntityAIShipLookIdle` | current look-around behavior | NOT_AUDITED | TODO | TODO | Verify exact modern owner |
 | AI | Open door | `EntityAIShipOpenDoor` | `ShipOpenDoorGoal` | NOT_AUDITED | TODO | TODO | |

@@ -1,5 +1,6 @@
 package com.lulan.shincolle.entity.carrier;
 
+import com.lulan.shincolle.ai.ShipCarrierAttackGoal;
 import com.lulan.shincolle.entity.BasicEntityShipHostileCV;
 import com.lulan.shincolle.reference.ID;
 
@@ -39,6 +40,7 @@ public class EntityCarrierKagaMob extends BasicEntityShipHostileCV {
         this.setStateEmotion(ID.S.State, this.random.nextInt(128), false);
 
         this.postInit();
+        this.launchHeight = this.getBbHeight() * 0.65D;
     }
 
     @Override
@@ -62,6 +64,14 @@ public class EntityCarrierKagaMob extends BasicEntityShipHostileCV {
                 break;
         }
         this.refreshDimensions();
+        this.launchHeight = this.getBbHeight() * 0.65D;
+    }
+
+    @Override
+    public void setAIList() {
+        super.setAIList();
+        // Legacy hostile Kaga launches aircraft at the carrier goal priority.
+        this.goalSelector.addGoal(11, new ShipCarrierAttackGoal(this));
     }
 
     @Override

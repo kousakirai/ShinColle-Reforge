@@ -32,7 +32,7 @@ public class ParticleHelper {
      */
     public static void spawnAttackTextParticle(Entity host, int type) {
         //null check
-        if (host == null || host.level() == null || !host.level().isClientSide()) return;
+        if (host == null || host.level() == null || host.level().isClientSide()) return;
 
         TargetPoint point = new TargetPoint(host.getX(), host.getY(), host.getZ(), 64D, host.level().dimension());
 

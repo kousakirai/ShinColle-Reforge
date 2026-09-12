@@ -112,7 +112,7 @@ public class ShipRangeAttackGoal extends Goal {
             }
 
             // update attributes periodically
-            if (this.entity.tickCount % 32 == 0) {
+            if (this.entity.tickCount % 64 == 0) {
                 this.updateAttackParms();
             }
 
@@ -133,13 +133,13 @@ public class ShipRangeAttackGoal extends Goal {
                     return;
                 }
             }
-            // Close the distance until the target is both in range and visible.
-            // The former condition required a lost line of sight as well, which
-            // left ships stationary when they could see a target beyond range.
-            if (distSq > this.rangeSq || !onSight) {
-                this.entity.getNavigation().moveTo(this.target, 1.0D);
-            } else {
+            // Stop only when a ranged ship has a visible target in range.  Keep
+            // melee ships moving toward the target, and refresh pursuit paths
+            // at the legacy 32-tick cadence.
+            if (distSq < this.rangeSq && onSight && !this.host.getStateFlag(ID.F.UseMelee)) {
                 this.entity.getNavigation().stop();
+            } else if (this.entity.tickCount % 32 == 0) {
+                this.entity.getNavigation().moveTo(this.target, 1.0D);
             }
 
             this.entity.getLookControl().setLookAt(this.target, 30.0F, 30.0F);

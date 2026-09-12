@@ -104,7 +104,7 @@ public class ShipCarrierAttackGoal extends Goal {
         }
 
         // update attributes every 64 ticks
-        if (this.entity.tickCount % 31 == 0) {
+        if (this.entity.tickCount % 64 == 0) {
             this.updateCombatParameters();
         }
 
@@ -118,8 +118,8 @@ public class ShipCarrierAttackGoal extends Goal {
         if (this.distSq < this.rangeSq && onSight && !this.host.getStateFlag(ID.F.UseMelee)) {
             // in range now, stop moving
             this.entity.getNavigation().stop();
-        } else {
-            // still out of range, chase every 32 ticks
+        } else if (this.entity.tickCount % 32 == 0) {
+            // still out of range, refresh pursuit every 32 ticks
             this.entity.getNavigation().moveTo(this.target, 1.0D);
         }
 

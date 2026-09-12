@@ -574,6 +574,7 @@ public abstract class BasicEntityShipHostile extends Mob
 
             // hostile light attack uses direct damage (not missiles)
             applySoundAtAttacker(1, target);
+            applyParticleAtAttacker(1, target, target);
 
             // if missed
             if (atk <= 0F) {
@@ -593,6 +594,10 @@ public abstract class BasicEntityShipHostile extends Mob
             boolean isTargetHurt = target.hurt(this.damageSources().mobProjectile(this, this), atk);
             if (isTargetHurt) {
                 DebugProfiler.count(profiler, "shincolle.hostile.attack.light.hit_success");
+                // Legacy light cannon hits show the impact particle on the
+                // target in addition to the attacker's muzzle flash.
+                ModNetworking.sendToAllTracking(
+                        new S2CSpawnParticle(target, 9, false), this);
                 applyEmotesReaction(3);
             } else {
                 DebugProfiler.count(profiler, "shincolle.hostile.attack.light.hit_fail");
@@ -614,6 +619,7 @@ public abstract class BasicEntityShipHostile extends Mob
 
         // play attack sound
         applySoundAtAttacker(2, target);
+        applyParticleAtAttacker(2, target, target);
 
         // target position
         float tarX = (float) target.getX();
@@ -852,6 +858,40 @@ public abstract class BasicEntityShipHostile extends Mob
     }
 
     public void applySoundAtAttacker(int type, Entity target) {
+    }
+
+    /**
+     * Send the legacy attack animation packet to tracking clients.
+     * Type 1 has the light-cannon muzzle visual; the other attack types only
+     * set the ship attack timer, matching the legacy animation contract.
+     */
+    public void applyParticleAtAttacker(int type, Entity target, Entity target2) {
+        if (target != null && !this.level().isClientSide()) {
+            if (type == 1 && target2 != null) {
+                double lookX = target2.getX() - this.getX();
+                double lookY = target2.getY() - this.getY();
+                double lookZ = target2.getZ() - this.getZ();
+                double lookLength = Math.sqrt(lookX * lookX + lookY * lookY + lookZ * lookZ);
+                if (lookLength > 1.0E-7D) {
+                    lookX /= lookLength;
+                    lookY /= lookLength;
+                    lookZ /= lookLength;
+                } else {
+                    Vec3 look = this.getLookAngle();
+                    lookX = look.x;
+                    lookY = look.y;
+                    lookZ = look.z;
+                }
+                ModNetworking.sendToAllTracking(
+                        new S2CSpawnParticle(this, 6,
+                                this.getX(), this.getY(), this.getZ(),
+                                lookX, lookY, lookZ, true),
+                        this);
+            } else {
+                ModNetworking.sendToAllTracking(
+                        new S2CSpawnParticle(this, 0, true), this);
+            }
+        }
     }
 
     public SoundEvent getCustomSound(int type, BasicEntityShipHostile ship) {

@@ -7,8 +7,12 @@ import com.lulan.shincolle.client.gui.inventory.ContainerFormation;
 import com.lulan.shincolle.client.gui.inventory.ContainerShipInventory;
 import com.lulan.shincolle.crafting.ShipCalc;
 import com.lulan.shincolle.entity.BasicEntityMount;
+import com.lulan.shincolle.entity.BasicEntityAirplane;
 import com.lulan.shincolle.entity.BasicEntityShip;
 import com.lulan.shincolle.entity.BasicEntityShipHostile;
+import com.lulan.shincolle.entity.BasicEntityShipHostileCV;
+import com.lulan.shincolle.entity.carrier.EntityCarrierAkagiMob;
+import com.lulan.shincolle.entity.carrier.EntityCarrierKagaMob;
 import com.lulan.shincolle.entity.IShipAttackBase;
 import com.lulan.shincolle.entity.other.EntityFloatingFort;
 import com.lulan.shincolle.entity.other.EntityProjectileStatic;
@@ -1508,6 +1512,144 @@ public final class ShinColleEntityRegistryGameTests {
         assertGoalState(targets, ShipRangeTargetGoal.class, 5, 1,
                 "second AI step must not duplicate active range target goal");
 
+        final int[] runningGoalStops = {0};
+        final boolean[] runningGoalTicks = {false};
+        final boolean[] armFuelDrain = {false};
+        invokeNoArgProtected(ship, "clearAITasks");
+        Goal runningGoal = new Goal() {
+            {
+                this.setFlags(EnumSet.of(Flag.MOVE));
+            }
+
+            @Override
+            public boolean canUse() {
+                return true;
+            }
+
+            @Override
+            public boolean canContinueToUse() {
+                return true;
+            }
+
+            @Override
+            public void tick() {
+                if (armFuelDrain[0] && !runningGoalTicks[0]) {
+                    runningGoalTicks[0] = true;
+                    ship.decrGrudgeNum(1);
+                }
+            }
+
+            @Override
+            public void stop() {
+                runningGoalStops[0]++;
+            }
+        };
+        goals.addGoal(0, runningGoal);
+        goals.tick();
+        WrappedGoal runningWrapper = null;
+        for (WrappedGoal wrappedGoal : goals.getAvailableGoals()) {
+            if (wrappedGoal.getGoal() == runningGoal) {
+                runningWrapper = wrappedGoal;
+                break;
+            }
+        }
+        if (runningWrapper == null || !runningWrapper.isRunning()) {
+            throw new AssertionError("Fuel refresh regression setup failed to start a running goal.");
+        }
+
+        // Fuel can be consumed from an attack Goal while GoalSelector is
+        // iterating.  The request must leave both selectors untouched until
+        // the next server AI boundary, then fuel must dominate any queued GUI
+        // refresh and make the ship inert.
+        Entity fuelTarget = EntityType.PIG.create(level);
+        if (fuelTarget == null) {
+            throw new AssertionError("Failed to create target for fuel refresh test.");
+        }
+        fuelTarget.moveTo(2.5D, level.getSharedSpawnPos().getY() + 1D, 0.5D, 0F, 0F);
+        if (!level.addFreshEntity(fuelTarget) || !(fuelTarget instanceof LivingEntity livingTarget)) {
+            throw new AssertionError("Failed to add target for fuel refresh test.");
+        }
+        ship.setTarget(livingTarget);
+        int goalsBeforeFuel = goals.getAvailableGoals().size();
+        int targetsBeforeFuel = targets.getAvailableGoals().size();
+        ship.setStateMinor(ID.M.NumGrudge, 1);
+        armFuelDrain[0] = true;
+        goals.tick();
+        if (!runningGoalTicks[0]) {
+            throw new AssertionError("Running goal did not consume fuel during GoalSelector iteration.");
+        }
+        ship.setStateFlag(ID.F.UseMelee, true);
+        ship.setStateFlag(ID.F.PassiveAI, false);
+        if (!ship.getStateFlag(ID.F.NoFuel)) {
+            throw new AssertionError("Consuming the last grudge must set NoFuel.");
+        }
+        if (goals.getAvailableGoals().size() != goalsBeforeFuel
+                || targets.getAvailableGoals().size() != targetsBeforeFuel
+                || ship.getTarget() != livingTarget) {
+            throw new AssertionError("Fuel refresh must not mutate selectors or target during the request.");
+        }
+
+        ship.aiStep();
+        if (!goals.getAvailableGoals().isEmpty() || !targets.getAvailableGoals().isEmpty()
+                || ship.getTarget() != null || ship.getMorale() != 0
+                || ship.getStateEmotion(ID.S.Emotion) != ID.Emotion.HUNGRY
+                || ship.getEmotesTick() <= 0
+                || runningGoalStops[0] != 1) {
+            throw new AssertionError("NoFuel must clear selectors/target and apply inert state plus fuel feedback at next AI step.");
+        }
+        ship.aiStep();
+        if (!goals.getAvailableGoals().isEmpty() || !targets.getAvailableGoals().isEmpty()) {
+            throw new AssertionError("NoFuel refresh must not duplicate or restore goals on the following AI step.");
+        }
+
+        // The previous running MOVE goal must not leave a stale selector lock
+        // behind.  A replacement MOVE goal must be able to start immediately.
+        Goal replacementGoal = new Goal() {
+            {
+                this.setFlags(EnumSet.of(Flag.MOVE));
+            }
+
+            @Override
+            public boolean canUse() {
+                return true;
+            }
+
+            @Override
+            public boolean canContinueToUse() {
+                return true;
+            }
+        };
+        goals.addGoal(0, replacementGoal);
+        goals.tick();
+        WrappedGoal replacementWrapper = null;
+        for (WrappedGoal wrappedGoal : goals.getAvailableGoals()) {
+            if (wrappedGoal.getGoal() == replacementGoal) {
+                replacementWrapper = wrappedGoal;
+                break;
+            }
+        }
+        if (replacementWrapper == null || !replacementWrapper.isRunning()) {
+            throw new AssertionError("A replacement MOVE goal could not start after fuel refresh.");
+        }
+        invokeNoArgProtected(ship, "clearAITasks");
+
+        ship.setStateMinor(ID.M.NumGrudge, 100);
+        ship.decrGrudgeNum(0);
+        if (!goals.getAvailableGoals().isEmpty() || !targets.getAvailableGoals().isEmpty()) {
+            throw new AssertionError("Refuel request must remain deferred until the next AI step.");
+        }
+        ship.aiStep();
+        assertGoalState(goals, ShipRangeAttackGoal.class, 11, 1,
+                "refuel must restore ship goals");
+        assertGoalState(targets, ShipRangeTargetGoal.class, 5, 1,
+                "refuel must restore target goals");
+        ship.aiStep();
+        assertGoalState(goals, ShipRangeAttackGoal.class, 11, 1,
+                "refuel must not duplicate ship goals");
+        assertGoalState(targets, ShipRangeTargetGoal.class, 5, 1,
+                "refuel must not duplicate target goals");
+
+        fuelTarget.discard();
         ship.discard();
         helper.succeed();
     }
@@ -1756,6 +1898,19 @@ public final class ShinColleEntityRegistryGameTests {
 
         hostile.discard();
         helper.succeed();
+    }
+
+    // 2026/09/11：hostile carrier aircraft parity
+    @GameTest(template = "empty", templateNamespace = "minecraft", timeoutTicks = 100)
+    public static void hostileCarrierAircraftAndGoalParity(GameTestHelper helper) {
+        assertHostileCarrierParity(helper, ModEntities.CV_AKAGI_MOB.get(), EntityCarrierAkagiMob.class,
+                "CV_AKAGI_MOB");
+    }
+
+    @GameTest(template = "empty", templateNamespace = "minecraft", timeoutTicks = 100)
+    public static void hostileCarrierKagaAircraftAndGoalParity(GameTestHelper helper) {
+        assertHostileCarrierParity(helper, ModEntities.CV_KAGA_MOB.get(), EntityCarrierKagaMob.class,
+                "CV_KAGA_MOB");
     }
 
     // 2026/04/15：GitHub Copilotによって追加
@@ -2483,6 +2638,101 @@ public final class ShinColleEntityRegistryGameTests {
         }
 
         ship.discard();
+    }
+
+    private static void assertHostileCarrierParity(GameTestHelper helper, EntityType<?> type,
+                                                    Class<? extends BasicEntityShipHostileCV> expectedClass,
+                                                    String id) {
+        ServerLevel level = helper.getLevel();
+        Entity entity = type.create(level);
+        if (!expectedClass.isInstance(entity) || !(entity instanceof BasicEntityShipHostileCV carrier)) {
+            throw new AssertionError(id + " did not create the expected hostile carrier entity.");
+        }
+
+        carrier.moveTo(0.5D, level.getSharedSpawnPos().getY() + 1D, 0.5D, 0F, 0F);
+        if (!level.addFreshEntity(carrier)) {
+            throw new AssertionError("Failed to add hostile carrier for parity test: " + id);
+        }
+        carrier.initAttrs(0);
+
+        if (carrier.getNumAircraftLight() != 10 || carrier.getNumAircraftHeavy() != 10
+                || !carrier.hasAirLight() || !carrier.hasAirHeavy()) {
+            throw new AssertionError("Hostile carrier aircraft stock mismatch for " + id
+                    + ". expected=10/10 and available=true/true actual="
+                    + carrier.getNumAircraftLight() + "/" + carrier.getNumAircraftHeavy() + "/"
+                    + carrier.hasAirLight() + "/" + carrier.hasAirHeavy());
+        }
+
+        carrier.setNumAircraftLight(0);
+        carrier.setNumAircraftHeavy(0);
+        if (carrier.getNumAircraftLight() != 10 || carrier.getNumAircraftHeavy() != 10) {
+            throw new AssertionError("Hostile carrier stock setters must remain no-ops for " + id);
+        }
+
+        invokeNoArgProtected(carrier, "clearAITasks");
+        invokeNoArgProtected(carrier, "setAIList");
+        GoalSelector selector = extractGoalSelector(carrier);
+        assertGoalState(selector, ShipRangeAttackGoal.class, 11, 1,
+                id + " hostile range attack goal");
+        assertGoalState(selector, ShipCarrierAttackGoal.class, 11, 1,
+                id + " carrier attack goal");
+
+        double expectedLaunchHeight = carrier.getBbHeight() * 0.65D;
+        if (Math.abs(carrier.getLaunchHeight() - expectedLaunchHeight) > 1.0E-5D) {
+            throw new AssertionError("Hostile carrier launch height mismatch for " + id
+                    + ". expected=" + expectedLaunchHeight + " actual=" + carrier.getLaunchHeight());
+        }
+
+        Entity targetEntity = ModEntities.DESTROYER_SHIMAKAZE.get().create(level);
+        if (!(targetEntity instanceof BasicEntityShip target)) {
+            throw new AssertionError("Failed to create hostile carrier launch target for " + id);
+        }
+        target.moveTo(5.5D, level.getSharedSpawnPos().getY() + 1D, 0.5D, 0F, 0F);
+        if (!level.addFreshEntity(target)) {
+            throw new AssertionError("Failed to add hostile carrier launch target for " + id);
+        }
+
+        int aircraftBefore = level.getEntitiesOfClass(BasicEntityAirplane.class,
+                carrier.getBoundingBox().inflate(64D)).size();
+        helper.runAfterDelay(60, () -> {
+            int aircraftAfter = level.getEntitiesOfClass(BasicEntityAirplane.class,
+                    carrier.getBoundingBox().inflate(64D)).size();
+            String failure = null;
+            if (aircraftAfter <= aircraftBefore) {
+                GoalSelector activeTargetSelector = extractTargetSelector(carrier);
+                boolean rangeGoalRegistered = false;
+                boolean rangeGoalRunning = false;
+                boolean rangeGoalCanUse = false;
+                for (WrappedGoal wrappedGoal : activeTargetSelector.getAvailableGoals()) {
+                    if (wrappedGoal.getGoal() instanceof ShipRangeTargetGoal) {
+                        rangeGoalRegistered = true;
+                        rangeGoalRunning = wrappedGoal.isRunning();
+                        rangeGoalCanUse = wrappedGoal.canUse();
+                    }
+                }
+                failure = "Hostile carrier did not naturally acquire and launch aircraft for " + id
+                        + ". predicate=" + new TargetHelper.SelectorForHostile(carrier).test(target)
+                        + " canAttack=" + carrier.canAttack(target)
+                        + " allied=" + carrier.isAlliedTo(target)
+                        + " visible=" + carrier.getSensing().hasLineOfSight(target)
+                        + " targetInvisible=" + target.isInvisible()
+                        + " targetAlive=" + target.isAlive()
+                        + " tickCount=" + carrier.tickCount
+                        + " noAi=" + carrier.isNoAi()
+                        + " distanceSq=" + carrier.distanceToSqr(target)
+                        + " targetGoalCount=" + activeTargetSelector.getAvailableGoals().size()
+                        + " rangeGoalRegistered=" + rangeGoalRegistered
+                        + " rangeGoalRunning=" + rangeGoalRunning
+                        + " rangeGoalCanUse=" + rangeGoalCanUse;
+            }
+
+            target.discard();
+            carrier.discard();
+            if (failure != null) {
+                throw new AssertionError(failure);
+            }
+            helper.succeed();
+        });
     }
 
     private static int findGoalPriority(GoalSelector selector, Class<? extends Goal> goalClass) {

@@ -63,10 +63,14 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
 
     @Override
     protected void setAIList() {
+        LivingEntity previousTarget = this.getTarget();
         this.clearAITasks();
         this.clearAITargetTasks();
         this.goalSelector.addGoal(1, new ShipAircraftAttackGoal(this));
-        this.setTarget(this.getTarget());
+        // clearAITargetTasks() also clears Mob's current target.  Preserve the
+        // target that was active before the selector rebuild, matching the
+        // legacy airplane's atkTarget restoration.
+        this.setTarget(previousTarget);
     }
 
     // ========== Target Finding ==========
@@ -152,8 +156,7 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
                     + " ammoL=" + this.numAmmoLight);
         }
         if (!this.level().isClientSide()) {
-            if (this.host != null && ((Entity) this.host).isAlive()) {
-                Entity hostEnt = (Entity) this.host;
+            if (this.host instanceof Entity hostEnt && hostEnt.isAlive()) {
 
                 // return home behavior
                 if (this.backHome && this.isAlive()) {
@@ -196,7 +199,7 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
 //                }
 
                 // target finding every 16 ticks
-                if (this.canFindTarget() && !this.backHome) {
+                if (this.tickCount % 16 == 0 && this.canFindTarget() && !this.backHome) {
                     boolean findNewTarget = false;
 
                     if (this.tickCount < 1200) {
@@ -208,8 +211,9 @@ public abstract class BasicEntityAirplane extends BasicEntitySummon
                     if (findNewTarget) {
                         Entity newTarget = findNearbyTarget();
 
-                        if (newTarget == null && this.host != null) {
-                            newTarget = this.getTarget();
+                        if (newTarget == null && this.host instanceof Entity hostEntity
+                                && hostEntity.isAlive()) {
+                            newTarget = this.host.getEntityTarget();
                         }
 
                         if (newTarget != null) {

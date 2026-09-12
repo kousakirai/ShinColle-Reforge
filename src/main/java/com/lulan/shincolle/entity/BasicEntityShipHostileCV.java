@@ -17,8 +17,13 @@ import net.minecraft.world.level.Level;
  */
 public abstract class BasicEntityShipHostileCV extends BasicEntityShipHostile implements IShipAircraftAttack {
 
-    protected int numAircraftLight = 0;
-    protected int numAircraftHeavy = 0;
+    /**
+     * Hostile carriers have the legacy effectively-unlimited aircraft stock.
+     * The old implementation exposed ten aircraft of each type and made the
+     * setters no-ops, so launching or recovering an aircraft never exhausted
+     * the carrier's practical supply.
+     */
+    private static final int HOSTILE_AIRCRAFT_STOCK = 10;
     protected double launchHeight = 2.0D;
 
     protected BasicEntityShipHostileCV(EntityType<? extends BasicEntityShipHostileCV> type, Level level) {
@@ -29,32 +34,32 @@ public abstract class BasicEntityShipHostileCV extends BasicEntityShipHostile im
 
     @Override
     public int getNumAircraftLight() {
-        return numAircraftLight;
+        return HOSTILE_AIRCRAFT_STOCK;
     }
 
     @Override
     public void setNumAircraftLight(int par1) {
-        this.numAircraftLight = par1;
+        // Legacy hostile carriers deliberately ignore stock updates.
     }
 
     @Override
     public int getNumAircraftHeavy() {
-        return numAircraftHeavy;
+        return HOSTILE_AIRCRAFT_STOCK;
     }
 
     @Override
     public void setNumAircraftHeavy(int par1) {
-        this.numAircraftHeavy = par1;
+        // Legacy hostile carriers deliberately ignore stock updates.
     }
 
     @Override
     public boolean hasAirLight() {
-        return numAircraftLight > 0;
+        return true;
     }
 
     @Override
     public boolean hasAirHeavy() {
-        return numAircraftHeavy > 0;
+        return true;
     }
 
     public double getLaunchHeight() {
@@ -79,9 +84,9 @@ public abstract class BasicEntityShipHostileCV extends BasicEntityShipHostile im
 
     @Override
     public boolean attackEntityWithAircraft(Entity target) {
-        // check aircraft and ammo
-        if (this.getNumAircraftLight() <= 0
-                || !decrAmmoNum(0, 6 * this.getAmmoConsumption())) {
+        // Hostile carrier aircraft stock is unlimited in the legacy UX; ammo
+        // remains the only launch resource that can reject an attack.
+        if (!decrAmmoNum(0, 6 * this.getAmmoConsumption())) {
             return false;
         }
 
@@ -89,9 +94,6 @@ public abstract class BasicEntityShipHostileCV extends BasicEntityShipHostile im
         if (this.random.nextInt(2) == 0) {
             this.setEntityTarget(null);
         }
-
-        // consume aircraft slot
-        this.setNumAircraftLight(this.getNumAircraftLight() - 1);
 
         // grudge and morale
         decrGrudgeNum(4);
@@ -119,6 +121,7 @@ public abstract class BasicEntityShipHostileCV extends BasicEntityShipHostile im
         this.level().addFreshEntity(plane);
 
         applySoundAtAttacker(3, target);
+        applyParticleAtAttacker(3, target, target);
         applyEmotesReaction(3);
 
         return true;
@@ -128,16 +131,13 @@ public abstract class BasicEntityShipHostileCV extends BasicEntityShipHostile im
 
     @Override
     public boolean attackEntityWithHeavyAircraft(Entity target) {
-        if (this.getNumAircraftHeavy() <= 0
-                || !decrAmmoNum(1, 2 * this.getAmmoConsumption())) {
+        if (!decrAmmoNum(1, 2 * this.getAmmoConsumption())) {
             return false;
         }
 
         if (this.random.nextInt(2) == 0) {
             this.setEntityTarget(null);
         }
-
-        this.setNumAircraftHeavy(this.getNumAircraftHeavy() - 1);
 
         decrGrudgeNum(6);
         decrMorale(4);
@@ -162,6 +162,7 @@ public abstract class BasicEntityShipHostileCV extends BasicEntityShipHostile im
         this.level().addFreshEntity(plane);
 
         applySoundAtAttacker(4, target);
+        applyParticleAtAttacker(4, target, target);
         applyEmotesReaction(3);
 
         return true;

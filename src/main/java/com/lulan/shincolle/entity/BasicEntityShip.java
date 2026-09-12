@@ -53,6 +53,8 @@ import net.minecraft.world.entity.ai.Brain;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.control.MoveControl;
+import net.minecraft.world.entity.ai.goal.GoalSelector;
+import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.navigation.PathNavigation;
@@ -162,6 +164,7 @@ public abstract class BasicEntityShip extends TamableAnimal
     // initialization
     private boolean initAI, initWaitAI;
     private boolean goalRefreshRequested, targetGoalRefreshRequested;
+    private boolean fuelStateRefreshRequested;
     private boolean isUpdated;
     private int updateTime = 16;
 
@@ -224,6 +227,7 @@ public abstract class BasicEntityShip extends TamableAnimal
         this.initWaitAI = false;
         this.goalRefreshRequested = false;
         this.targetGoalRefreshRequested = false;
+        this.fuelStateRefreshRequested = false;
         this.isUpdated = false;
     }
 
@@ -476,13 +480,28 @@ public abstract class BasicEntityShip extends TamableAnimal
     }
 
     protected void clearAITasks() {
+        stopRunningGoals(this.goalSelector);
         this.goalSelector.removeAllGoals(goal -> true);
     }
 
     protected void clearAITargetTasks() {
+        stopRunningGoals(this.targetSelector);
         this.setTarget(null);
         this.setEntityTarget(null);
         this.targetSelector.removeAllGoals(goal -> true);
+    }
+
+    /**
+     * GoalSelector.removeAllGoals removes entries but does not stop a running
+     * WrappedGoal.  Stop first so the selector releases its locked flags on
+     * the next safe tick before replacement goals are evaluated.
+     */
+    private void stopRunningGoals(GoalSelector selector) {
+        for (WrappedGoal wrappedGoal : new ArrayList<>(selector.getAvailableGoals())) {
+            if (wrappedGoal.isRunning()) {
+                wrappedGoal.stop();
+            }
+        }
     }
 
     public void addAdditionalSaveData(CompoundTag nbt) {
@@ -659,6 +678,10 @@ public abstract class BasicEntityShip extends TamableAnimal
         if (!level().isClientSide()) {
             EntityHelper.updateShipNavigator(this);
             TargetHelper.updateTarget(this);
+            // Apply all selector changes at the server AI boundary.  In
+            // particular, fuel can be consumed by a running attack Goal, so
+            // updateFuelStateByAITaskPresence() must never mutate a selector
+            // while GoalSelector is iterating it.
             applyPendingAiRefreshes();
 
             super.aiStep();
@@ -677,15 +700,16 @@ public abstract class BasicEntityShip extends TamableAnimal
             // reset AI and sync once
             if (!this.initAI && tickCount > 10) {
                 setStateFlag(ID.F.CanDrop, true);
-                // check fuel state first (sets NoFuel flag but won't clear
-                // goals since none are registered yet)
+                // check fuel state first.  The fuel refresh is applied at the
+                // next aiStep boundary; do not register goals while the ship
+                // is already out of fuel.
                 decrGrudgeNum(0);
-                // then register goals — they stay registered because
-                // updateFuelStateByAITaskPresence already ran with empty selectors
                 clearAITasks();
                 clearAITargetTasks();
-                setAIList();
-                setAITargetList();
+                if (!getStateFlag(ID.F.NoFuel)) {
+                    setAIList();
+                    setAITargetList();
+                }
                 updateChunkLoader();
                 this.initAI = true;
             }
@@ -1151,6 +1175,9 @@ public abstract class BasicEntityShip extends TamableAnimal
         boolean isTargetHurt = target.hurt(this.damageSources().mobProjectile(this, this), atk);
 
         if (isTargetHurt) {
+            // Legacy light cannon hits show an impact particle on the target.
+            ModNetworking.sendToAllTracking(
+                    new S2CSpawnParticle(target, 9, false), this);
             applyEmotesReaction(3);
 
             // Apply attack effect buffs
@@ -1521,34 +1548,16 @@ public abstract class BasicEntityShip extends TamableAnimal
 
     private void updateFuelStateByAITaskPresence() {
         boolean noFuel = this.getStateFlag(ID.F.NoFuel);
-        int targetTaskCount = this.targetSelector.getAvailableGoals().size();
+        boolean hasGoals = !this.goalSelector.getAvailableGoals().isEmpty();
+        boolean hasTargetGoals = !this.targetSelector.getAvailableGoals().isEmpty();
 
-        if (noFuel) {
-            // Clear all AI when fuel runs out — ship becomes inert.
-            // Water buoyancy is handled by travel()/moveEntityInFluid()
-            // independently of AI goals, so the ship won't sink.
-            if (targetTaskCount > 0) {
-                this.setMorale(0);
-                clearAITasks();
-                clearAITargetTasks();
-                this.setTarget(null);
-                if (this.getVehicle() instanceof BasicEntityMount mount) {
-                    mount.clearAITasks();
-                }
-                sendSyncPacketEmotion();
-            }
-        } else {
-            if (targetTaskCount < 1) {
-                clearAITasks();
-                clearAITargetTasks();
-                setAIList();
-                setAITargetList();
-                if (this.getVehicle() instanceof BasicEntityMount mount) {
-                    mount.clearAITasks();
-                    mount.setAIList();
-                }
-                sendSyncPacketEmotion();
-            }
+        // Never clear/rebuild a selector here.  This method is reachable from
+        // attack execution (for example, when the attack consumes the last
+        // grudge), while GoalSelector may still be traversing its entries.
+        // Queue the desired fuel transition for applyPendingAiRefreshes().
+        if ((noFuel && (hasGoals || hasTargetGoals || this.getTarget() != null))
+                || (!noFuel && !hasTargetGoals)) {
+            this.fuelStateRefreshRequested = true;
         }
     }
 
@@ -1863,9 +1872,34 @@ public abstract class BasicEntityShip extends TamableAnimal
      */
     public void applyParticleAtAttacker(int type, Entity target, Entity target2) {
         if (target != null && !this.level().isClientSide()) {
-            ModNetworking.sendToAllTracking(
-                    new S2CSpawnParticle(this, (byte) type, false),
-                    this);
+            // Legacy attacker feedback uses the light-cannon muzzle particle
+            // for type 1 and the default muzzle effect for every other attack,
+            // while always setting the client attack-animation timer.
+            if (type == 1 && target2 != null) {
+                double lookX = target2.getX() - this.getX();
+                double lookY = target2.getY() - this.getY();
+                double lookZ = target2.getZ() - this.getZ();
+                double lookLength = Math.sqrt(lookX * lookX + lookY * lookY + lookZ * lookZ);
+                if (lookLength > 1.0E-7D) {
+                    lookX /= lookLength;
+                    lookY /= lookLength;
+                    lookZ /= lookLength;
+                } else {
+                    Vec3 look = this.getLookAngle();
+                    lookX = look.x;
+                    lookY = look.y;
+                    lookZ = look.z;
+                }
+                ModNetworking.sendToAllTracking(
+                        new S2CSpawnParticle(this, 6,
+                                this.getX(), this.getY(), this.getZ(),
+                                lookX, lookY, lookZ, true),
+                        this);
+            } else {
+                ModNetworking.sendToAllTracking(
+                        new S2CSpawnParticle(this, 0, true),
+                        this);
+            }
         }
     }
 
@@ -2098,6 +2132,7 @@ public abstract class BasicEntityShip extends TamableAnimal
 
     @Override
     public void setStateFlag(int id, boolean par1) {
+        boolean changed = this.StateFlag[id] != par1;
         this.StateFlag[id] = par1;
 
         if (!this.level().isClientSide()) {
@@ -2105,6 +2140,11 @@ public abstract class BasicEntityShip extends TamableAnimal
                 this.goalRefreshRequested = true;
             } else if (id == ID.F.PassiveAI) {
                 this.targetGoalRefreshRequested = true;
+            } else if (id == ID.F.NoFuel && changed) {
+                // Fuel transitions use the same safe server AI boundary as
+                // the explicit GUI selector changes.  This also covers a
+                // direct state load/restore before any selector entries exist.
+                this.fuelStateRefreshRequested = true;
             }
         }
     }
@@ -2115,6 +2155,60 @@ public abstract class BasicEntityShip extends TamableAnimal
      * the next server AI step, before {@code super.aiStep()} ticks them.
      */
     private void applyPendingAiRefreshes() {
+        if (this.fuelStateRefreshRequested) {
+            boolean noFuel = this.getStateFlag(ID.F.NoFuel);
+
+            // Fuel owns both selectors.  Applying it first and discarding the
+            // lower-priority requests prevents a queued UseMelee/PassiveAI
+            // refresh from rebuilding goals after NoFuel has made the ship
+            // inert.
+            clearAITasks();
+            clearAITargetTasks();
+            if (!noFuel) {
+                setAIList();
+                setAITargetList();
+            }
+
+            if (this.getVehicle() instanceof BasicEntityMount mount) {
+                mount.clearAITasks();
+                if (!noFuel) {
+                    mount.setAIList();
+                }
+                if (noFuel) {
+                    mount.setTarget(null);
+                }
+            }
+
+            if (noFuel) {
+                this.setMorale(0);
+                this.setStateEmotion(ID.S.Emotion, ID.Emotion.HUNGRY, false);
+            }
+            // Legacy fuel transitions synchronize all misc state and show a
+            // short random no-fuel/recovery emote when the emote timer allows.
+            this.sendSyncPacketAll();
+            if (this.getEmotesTick() <= 0) {
+                if (noFuel) {
+                    this.setEmotesTick(20);
+                    int[] noFuelEmotes = { 10, 0, 32, 2, 12, 5, 20 };
+                    applyParticleEmotion(noFuelEmotes[this.random.nextInt(noFuelEmotes.length)]);
+                } else {
+                    this.setEmotesTick(40);
+                    int recoveryRoll = this.random.nextInt(5);
+                    applyParticleEmotion(switch (recoveryRoll) {
+                        case 1 -> 31;
+                        case 2 -> 32;
+                        case 3 -> 7;
+                        default -> 1;
+                    });
+                }
+            }
+
+            this.fuelStateRefreshRequested = false;
+            this.goalRefreshRequested = false;
+            this.targetGoalRefreshRequested = false;
+            return;
+        }
+
         if (this.goalRefreshRequested) {
             clearAITasks();
             setAIList();
